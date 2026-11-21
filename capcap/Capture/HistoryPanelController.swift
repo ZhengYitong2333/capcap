@@ -55,6 +55,10 @@ final class HistoryPanelController {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(resizeDialog),
+                                               name: .historyCardSizeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resizeDialog),
+                                               name: .historyPanelSizeDidChange, object: nil)
         syncNotchAvailability()
     }
 
@@ -90,6 +94,7 @@ final class HistoryPanelController {
     }
 
     @objc private func screenParametersChanged() {
+        resizeDialog()
         syncNotchAvailability()
     }
 
@@ -111,6 +116,17 @@ final class HistoryPanelController {
         return controller
     }
 
+    @objc private func resizeDialog() {
+        guard let panel = dialogPanel, let visible = panel.screen?.visibleFrame else { return }
+        var frame = panel.frame
+        let top = min(frame.maxY, visible.maxY - 12)
+        frame.size.height = HistoryPanelPresentation.dialog.height(available: visible.height)
+        frame.origin.y = max(visible.minY, top - frame.height)
+        frame.size.width = HistoryPanelPresentation.dialog.width(on: visible.width)
+        frame.origin.x = visible.midX - frame.width / 2
+        panel.setFrame(frame, display: true)
+    }
+
     private func toggleDialog() {
         if dialogPanel?.isVisible == true {
             closeDialog()
@@ -124,8 +140,8 @@ final class HistoryPanelController {
 
         let screen = NSScreen.screenForMouseLocation() ?? NSScreen.main ?? NSScreen.screens.first
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let width = min(max(420, visible.width * 0.70), visible.width - 28)
-        let height = HistoryPanelPresentation.dialog.panelHeight
+        let width = HistoryPanelPresentation.dialog.width(on: visible.width)
+        let height = HistoryPanelPresentation.dialog.height(available: visible.height)
         let frame = NSRect(
             x: visible.midX - width / 2,
             y: visible.maxY - height - 12,
@@ -228,6 +244,7 @@ final class HistoryPanelController {
 }
 
 private final class HistoryFloatingPanel: NSPanel {
+    var isResizingPanel = false
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -307,6 +324,10 @@ private final class HistoryNotchWindowController: NSWindowController {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(screenDidChange),
+                                               name: .historyCardSizeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(screenDidChange),
+                                               name: .historyPanelSizeDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -359,7 +380,8 @@ private final class HistoryNotchWindowController: NSWindowController {
     }
 
     private func requestCollapse() {
-        guard HistoryPanelDismissalPolicy.shouldDismissAutomatically(isLocked: isLocked) else { return }
+        guard (window as? HistoryFloatingPanel)?.isResizingPanel != true,
+              HistoryPanelDismissalPolicy.shouldDismissAutomatically(isLocked: isLocked) else { return }
         collapse()
     }
 
@@ -557,8 +579,8 @@ struct HistoryNotchGeometry {
     var notchHeight: CGFloat
     var screenWidth: CGFloat
     var notchLeadingX: CGFloat
+    var screenHeight: CGFloat = 800
 
-    let expandedHorizontalMargin: CGFloat = 24
     let expandedBottomInset: CGFloat = 0
 
     static func geometry(for screen: NSScreen?) -> HistoryNotchGeometry {
@@ -580,7 +602,8 @@ struct HistoryNotchGeometry {
             notchWidth: notchWidth,
             notchHeight: safeTop > 0 ? safeTop : 24,
             screenWidth: screenFrame.width,
-            notchLeadingX: notchLeadingX
+            notchLeadingX: notchLeadingX,
+            screenHeight: screenFrame.height
         )
     }
 
@@ -589,11 +612,11 @@ struct HistoryNotchGeometry {
     }
 
     var contentHeight: CGFloat {
-        HistoryPanelPresentation.notch.panelHeight
+        HistoryPanelPresentation.notch.height(available: screenHeight)
     }
 
     var expandedWidth: CGFloat {
-        min(max(screenWidth * 0.74, 860), max(320, screenWidth - expandedHorizontalMargin))
+        HistoryPanelPresentation.notch.width(on: screenWidth)
     }
 
     var expandedSize: NSSize {
@@ -953,29 +976,43 @@ private enum HistoryPanelPresentation {
     case dialog
     case notch
 
-    var tileWidth: CGFloat {
-        switch self {
-        case .dialog: return 180
-        case .notch: return 150
-        }
+    func width(on screenWidth: CGFloat, fraction: CGFloat = Defaults.historyPanelWidthFraction) -> CGFloat {
+        let minimum: CGFloat = self == .dialog ? 420 : 860
+        let margin: CGFloat = self == .dialog ? 28 : 24
+        return min(max(minimum, (screenWidth * fraction).rounded()), max(1, screenWidth - margin))
     }
 
-    var tileHeight: CGFloat {
-        switch self {
-        case .dialog: return 146
-        case .notch: return 134
-        }
+    private var cardScale: CGFloat { CGFloat(Defaults.historyCardSizePercent) / 100 }
+
+    var tileWidth: CGFloat { ((self == .dialog ? 228 : 180) * cardScale).rounded() }
+
+    private var tileChromeHeight: CGFloat { self == .dialog ? 78 : 70 }
+    private var panelChromeHeight: CGFloat {
+        HistoryPanelLayout.headerTopInset + HistoryPanelLayout.headerHeight
+            + HistoryPanelLayout.verticalGap + contentBottomInset
     }
 
-    var previewHeight: CGFloat {
-        switch self {
-        case .dialog: return 98
-        case .notch: return 88
-        }
+    var defaultHeight: CGFloat {
+        panelChromeHeight + tileChromeHeight + ((self == .dialog ? 134 : 86) * cardScale).rounded()
     }
 
-    var previewPixelSize: Int {
-        Int(max(tileWidth, previewHeight) * (NSScreen.main?.backingScaleFactor ?? 2))
+    func height(available: CGFloat, adjustment: CGFloat = Defaults.historyPanelHeightAdjustment) -> CGFloat {
+        let minimum = panelChromeHeight + tileChromeHeight + 48
+        return min(max(minimum, (defaultHeight + adjustment).rounded()), max(1, available - 24))
+    }
+
+    func tileHeight(on screen: NSScreen?) -> CGFloat {
+        let display = screen ?? NSScreen.main
+        let available = self == .dialog ? display?.visibleFrame.height : display?.frame.height
+        return max(1, height(available: available ?? 800) - panelChromeHeight)
+    }
+
+    func previewHeight(on screen: NSScreen?) -> CGFloat {
+        max(1, tileHeight(on: screen) - tileChromeHeight)
+    }
+
+    func previewPixelSize(on screen: NSScreen?) -> Int {
+        Int(max(tileWidth, previewHeight(on: screen)) * (screen?.backingScaleFactor ?? 2))
     }
 
     var outerInset: CGFloat {
@@ -1003,25 +1040,10 @@ private enum HistoryPanelPresentation {
         }
     }
 
-    var panelHeight: CGFloat {
-        HistoryPanelLayout.headerTopInset
-            + HistoryPanelLayout.headerHeight
-            + HistoryPanelLayout.verticalGap
-            + tileHeight
-            + contentBottomInset
-    }
+
 }
 
 enum HistoryFavoritePolicy {
-    static let minimumFavoriteCountForFilter = 1
-
-    static func shouldShowFilter(for entries: [HistoryEntry]) -> Bool {
-        entries.lazy
-            .filter { HistoryManager.isFavorite(url: $0.fileURL) }
-            .prefix(minimumFavoriteCountForFilter)
-            .count >= minimumFavoriteCountForFilter
-    }
-
     static func toggleTargets(clicked: HistoryEntry, selected: [HistoryEntry]) -> [HistoryEntry] {
         selected.count > 1 ? selected : [clicked]
     }
@@ -1033,13 +1055,27 @@ enum HistoryFavoritePolicy {
 
 enum HistoryPanelFilter: CaseIterable, Equatable {
     case all
-    case favorites
+    case text
     case screenshots
+    case files
+    case favorites
     case gif
     case mp4
     case colors
-    case text
-    case files
+
+    static let persistentTabs: Set<Self> = [.all, .text, .screenshots, .files, .favorites]
+
+    var tint: NSColor {
+        switch self {
+        case .all: return .systemPink
+        case .favorites: return .systemPurple
+        case .screenshots: return .systemYellow
+        case .text: return .systemGreen
+        case .files: return .systemTeal
+        case .gif, .mp4: return .systemOrange
+        case .colors: return .systemIndigo
+        }
+    }
 
     var title: String {
         switch self {
@@ -1051,13 +1087,6 @@ enum HistoryPanelFilter: CaseIterable, Equatable {
         case .colors: return L10n.historyPanelFilterColors
         case .text: return L10n.historyPanelFilterText
         case .files: return L10n.historyPanelFilterFiles
-        }
-    }
-
-    var symbolName: String? {
-        switch self {
-        case .favorites: return "star.fill"
-        case .all, .screenshots, .gif, .mp4, .colors, .text, .files: return nil
         }
     }
 
@@ -1289,6 +1318,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     var onRequestDismiss: (() -> Void)?
     var onLockStateChanged: ((Bool) -> Void)?
 
+    private var shouldRevealSelectedFilter = true
     private var selectedFilter: HistoryPanelFilter = .all
     private var filterButtons: [HistoryPanelFilter: HistoryPanelFilterButton] = [:]
     private let filterScrollView = HistoryPanelFilterScrollView()
@@ -1296,6 +1326,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private let scrollView = HistoryPanelScrollView()
     private let collectionView = NSCollectionView()
     private let collectionLayout = NSCollectionViewFlowLayout()
+    private let emptySettingsButton = NSButton()
     private let emptyLabel = NSTextField(labelWithString: "")
     private let deleteButton = HistoryPanelDeleteButton()
     private let infoButton = HistoryPanelActionButton(
@@ -1304,6 +1335,19 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     )
     private let finderButton = HistoryPanelActionButton(symbolName: "folder", accessibilityLabel: L10n.historyShowInFinder)
     private let lockButton = HistoryPanelActionButton(symbolName: "lock", accessibilityLabel: L10n.historyPanelLock)
+    private let sizeSliderPanel = NSView()
+    private let sizeValueLabel = NSTextField(labelWithString: "")
+    private var sizeOutsideClickMonitor: Any?
+    private let sizeSlider = NSSlider(
+        value: Double(Defaults.historyCardSizePercent),
+        minValue: Double(Defaults.historyCardSizeRange.lowerBound),
+        maxValue: Double(Defaults.historyCardSizeRange.upperBound),
+        target: nil, action: nil
+    )
+    private let sizeButton = HistoryPanelActionButton(
+        symbolName: "arrow.up.left.and.arrow.down.right",
+        accessibilityLabel: L10n.historyCardSizeAction(Defaults.historyCardSizePercent)
+    )
     private let settingsButton = HistoryPanelActionButton(symbolName: "gearshape", accessibilityLabel: L10n.settings)
     private let actionButtonsContainer = NSStackView()
     private let searchField = HistoryPanelSearchField()
@@ -1320,7 +1364,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private var keyboardMouseOrigin: NSPoint?
     private var allEntries: [HistoryEntry] = []
     private var visibleEntries: [HistoryEntry] = []
-    private var availableFilters: Set<HistoryPanelFilter> = [.all]
+    private var availableFilters = HistoryPanelFilter.persistentTabs
     private var renderedEntryCount = 0
     private var isAppendingPage = false
     private var selectedEntryIDs: [String] = []
@@ -1365,6 +1409,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         setupUI()
+        NotificationCenter.default.addObserver(self, selector: #selector(cardSizeChanged),
+                                               name: .historyCardSizeDidChange, object: nil)
 
         NotificationCenter.default.addObserver(
             self,
@@ -1389,6 +1435,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        stopSizeOutsideClickMonitoring()
         stopConfirmationDismissMonitoring()
         stopSelectionKeyMonitoring()
         stopSearchMouseMovementTracking()
@@ -1426,10 +1473,14 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             let button = HistoryPanelFilterButton(filter: filter)
             button.target = self
             button.action = #selector(filterClicked(_:))
+            button.onHover = { [weak self] in
+                guard let self, self.isActive, self.selectedFilter != filter else { return }
+                self.selectFilter(filter, reveal: false)
+            }
             filterButtons[filter] = button
             filterScrollView.addFilterButton(button)
         }
-        updateFilterAvailability(availableFilters: [.all])
+        updateFilterAvailability(availableFilters: availableFilters)
 
         finderButton.target = self
         finderButton.action = #selector(showHistoryInFinderClicked)
@@ -1440,6 +1491,13 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         lockButton.target = self
         lockButton.action = #selector(toggleLockClicked)
 
+        sizeSlider.controlSize = .small
+        sizeSlider.isContinuous = true
+        sizeSlider.target = self
+        sizeSlider.action = #selector(slideCardSize(_:))
+        sizeButton.target = self
+        sizeButton.action = #selector(toggleSizeSlider)
+        setSizeSliderExpanded(false)
         settingsButton.target = self
         settingsButton.action = #selector(openSettingsClicked)
 
@@ -1454,6 +1512,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         actionButtonsContainer.addArrangedSubview(infoButton)
         actionButtonsContainer.addArrangedSubview(finderButton)
         actionButtonsContainer.addArrangedSubview(lockButton)
+        actionButtonsContainer.addArrangedSubview(sizeButton)
         actionButtonsContainer.addArrangedSubview(settingsButton)
         header.addSubview(actionButtonsContainer)
 
@@ -1486,7 +1545,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         collectionLayout.scrollDirection = .horizontal
         collectionLayout.minimumLineSpacing = 14
         collectionLayout.minimumInteritemSpacing = 14
-        collectionLayout.itemSize = NSSize(width: presentation.tileWidth, height: presentation.tileHeight)
+        collectionLayout.itemSize = NSSize(width: presentation.tileWidth, height: presentation.tileHeight(on: window?.screen))
         collectionLayout.sectionInset = NSEdgeInsets(
             top: 0,
             left: presentation.stripSideInset,
@@ -1498,7 +1557,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         collectionView.delegate = self
         collectionView.isSelectable = false
         collectionView.backgroundColors = [.clear]
-        collectionView.frame = NSRect(x: 0, y: 0, width: 1, height: presentation.tileHeight)
+        collectionView.frame = NSRect(x: 0, y: 0, width: 1, height: presentation.tileHeight(on: window?.screen))
         collectionView.register(
             HistoryPanelCollectionItem.self,
             forItemWithIdentifier: HistoryPanelCollectionItem.identifier
@@ -1516,6 +1575,12 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         emptyLabel.isHidden = true
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(emptyLabel)
+        emptySettingsButton.bezelStyle = .rounded
+        emptySettingsButton.target = self
+        emptySettingsButton.action = #selector(openHistorySettings)
+        emptySettingsButton.translatesAutoresizingMaskIntoConstraints = false
+        emptySettingsButton.isHidden = true
+        addSubview(emptySettingsButton)
 
         let inset = presentation.outerInset
         let headerInset = presentation.headerInset
@@ -1570,11 +1635,20 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             shortcutGuideView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             shortcutGuideView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
+            emptySettingsButton.centerXAnchor.constraint(equalTo: emptyLabel.centerXAnchor),
+            emptySettingsButton.topAnchor.constraint(equalTo: emptyLabel.bottomAnchor, constant: 8),
             emptyLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
             emptyLabel.widthAnchor.constraint(lessThanOrEqualTo: scrollView.widthAnchor, constant: -40),
         ])
 
+        for edge in HistoryPanelResizeHandle.Edge.allCases {
+            let handle = HistoryPanelResizeHandle(presentation: presentation, edge: edge)
+            addSubview(handle)
+            handle.pin(to: self)
+        }
+
+        installSizeSliderPanel()
         updateLocalizedCopy()
         startConfirmationDismissMonitoring()
         startSelectionKeyMonitoring()
@@ -1595,7 +1669,10 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             button.title = filter.title
         }
         filterScrollView.contentDidChange()
-        visibleCollectionTiles.forEach { $0.refreshFavoriteState() }
+        for tile in visibleCollectionTiles {
+            tile.refreshFavoriteState()
+            tile.refreshKindHeader()
+        }
         updateDeleteButtonPresentation()
         infoButton.updateAccessibilityLabel(
             isShowingShortcutGuide ? L10n.historyPanelShortcutGuideHide : L10n.historyPanelShortcutGuide
@@ -1603,6 +1680,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         shortcutGuideView.reload()
         finderButton.updateAccessibilityLabel(L10n.historyShowInFinder)
         updateLockButtonPresentation()
+        refreshSizeControls()
         settingsButton.updateAccessibilityLabel(L10n.settings)
         searchField.clearAccessibilityLabel = L10n.historyPanelClearSearch
         updateSearchPlaceholder()
@@ -1619,6 +1697,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
                 updatePreviewLoading(initial: true)
             }
         } else {
+            setSizeSliderExpanded(false)
             clearKeyboardNavigation()
             endSearchMode(animated: false)
             if isReloading {
@@ -1653,7 +1732,9 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         selectFilter(sender.filter)
     }
 
-    private func selectFilter(_ filter: HistoryPanelFilter) {
+    private func selectFilter(_ filter: HistoryPanelFilter, reveal: Bool = true) {
+        // Keep the strip stationary under the pointer when switching by hover.
+        shouldRevealSelectedFilter = reveal
         clearKeyboardNavigation()
         setShortcutGuideVisible(false)
         if isSearchMode, filter.searchScope == nil {
@@ -1911,12 +1992,14 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private func updateEmptyLabel() {
         let hasSearchQuery = isSearchMode
             && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        emptySettingsButton.title = L10n.historyRecordingSettings
         emptyLabel.stringValue = hasSearchQuery
             ? L10n.historyPanelSearchNoResults
             : L10n.historyPanelEmpty
     }
 
     private func updateSearchPresentation(searching: Bool, animated: Bool) {
+        if searching { setSizeSliderExpanded(false) }
         searchAnimationGeneration += 1
         let generation = searchAnimationGeneration
 
@@ -1975,7 +2058,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         for (filter, button) in filterButtons {
             button.isSelected = filter == selectedFilter
         }
-        if let selectedButton = filterButtons[selectedFilter], !selectedButton.isHidden {
+        if shouldRevealSelectedFilter, let selectedButton = filterButtons[selectedFilter], !selectedButton.isHidden {
             filterScrollView.reveal(selectedButton)
         }
     }
@@ -2052,6 +2135,110 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         setDeleteConfirmation(false, animated: true)
         NSWorkspace.shared.open(HistoryManager.shared.cacheDirectoryURL())
         onRequestDismiss?()
+    }
+
+    @objc private func openHistorySettings() {
+        onRequestDismiss?()
+        SettingsWindowController.shared.showHistorySettings()
+    }
+
+    private func installSizeSliderPanel() {
+        sizeSliderPanel.translatesAutoresizingMaskIntoConstraints = false
+        sizeSliderPanel.wantsLayer = true
+        sizeSliderPanel.layer?.backgroundColor = NSColor(white: 0.13, alpha: 1).cgColor
+        sizeSliderPanel.layer?.cornerRadius = 9
+        sizeSliderPanel.layer?.borderWidth = 1
+        sizeSliderPanel.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
+        addSubview(sizeSliderPanel, positioned: .above, relativeTo: nil)
+
+        sizeSlider.translatesAutoresizingMaskIntoConstraints = false
+        sizeValueLabel.translatesAutoresizingMaskIntoConstraints = false
+        sizeValueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        sizeValueLabel.textColor = .white
+        sizeValueLabel.alignment = .right
+        sizeSliderPanel.addSubview(sizeSlider)
+        sizeSliderPanel.addSubview(sizeValueLabel)
+
+        let center = sizeSliderPanel.centerXAnchor.constraint(equalTo: sizeButton.centerXAnchor)
+        center.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            center,
+            sizeSliderPanel.topAnchor.constraint(equalTo: sizeButton.bottomAnchor, constant: 5),
+            sizeSliderPanel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 16),
+            sizeSliderPanel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
+            sizeSliderPanel.widthAnchor.constraint(equalToConstant: 180),
+            sizeSliderPanel.heightAnchor.constraint(equalToConstant: 36),
+            sizeSlider.leadingAnchor.constraint(equalTo: sizeSliderPanel.leadingAnchor, constant: 10),
+            sizeSlider.centerYAnchor.constraint(equalTo: sizeSliderPanel.centerYAnchor),
+            sizeSlider.trailingAnchor.constraint(equalTo: sizeValueLabel.leadingAnchor, constant: -8),
+            sizeValueLabel.widthAnchor.constraint(equalToConstant: 38),
+            sizeValueLabel.centerYAnchor.constraint(equalTo: sizeSliderPanel.centerYAnchor),
+            sizeValueLabel.trailingAnchor.constraint(equalTo: sizeSliderPanel.trailingAnchor, constant: -10),
+        ])
+    }
+
+    private func refreshSizeControls() {
+        let percent = Defaults.historyCardSizePercent
+        sizeValueLabel.stringValue = "\(percent)%"
+        sizeSlider.integerValue = percent
+        let label = L10n.historyCardSizeAction(percent)
+        sizeSlider.toolTip = label
+        sizeSlider.setAccessibilityLabel(label)
+        sizeButton.updateAccessibilityLabel(label)
+    }
+
+    @objc private func toggleSizeSlider() {
+        setSizeSliderExpanded(sizeSliderPanel.isHidden)
+    }
+
+    private func setSizeSliderExpanded(_ expanded: Bool) {
+        sizeSliderPanel.isHidden = !expanded
+        sizeButton.isSelected = expanded
+        sizeButton.setAccessibilityExpanded(expanded)
+        stopSizeOutsideClickMonitoring()
+        if expanded {
+            sizeOutsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+                self?.setSizeSliderExpanded(false)
+            }
+        }
+    }
+
+    private func stopSizeOutsideClickMonitoring() {
+        if let sizeOutsideClickMonitor {
+            NSEvent.removeMonitor(sizeOutsideClickMonitor)
+            self.sizeOutsideClickMonitor = nil
+        }
+    }
+
+    private func dismissSizeSliderIfNeeded(for event: NSEvent) -> Bool {
+        guard !sizeSliderPanel.isHidden else { return false }
+        let insideWindow = event.window === window
+        if insideWindow {
+            let point = event.locationInWindow
+            if sizeButton.bounds.contains(sizeButton.convert(point, from: nil))
+                || sizeSliderPanel.bounds.contains(sizeSliderPanel.convert(point, from: nil)) {
+                return false
+            }
+        }
+        setSizeSliderExpanded(false)
+        // A confirming click on the history panel should not also copy or delete an entry.
+        return insideWindow
+    }
+
+    @objc private func slideCardSize(_ slider: NSSlider) {
+        Defaults.historyCardSizePercent = Int(slider.doubleValue.rounded())
+    }
+
+    @objc private func cardSizeChanged() {
+        refreshSizeControls()
+        updateCollectionLayout()
+    }
+
+    @objc private func refreshSizedPreviews() {
+        guard isActive else { return }
+        collectionView.reloadData()
+        collectionView.layoutSubtreeIfNeeded()
+        updatePreviewLoading(initial: true)
     }
 
     @objc private func openSettingsClicked() {
@@ -2475,7 +2662,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
 
     private func startConfirmationDismissMonitoring() {
         guard confirmationDismissMonitor == nil else { return }
-        confirmationDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+        confirmationDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            if self?.dismissSizeSliderIfNeeded(for: event) == true { return nil }
             self?.collapseDeleteConfirmationIfNeeded(for: event)
             return event
         }
@@ -2675,6 +2863,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         scrollView.isHidden = isShowingShortcutGuide
         shortcutGuideView.isHidden = !isShowingShortcutGuide
         emptyLabel.isHidden = isShowingShortcutGuide || !visibleEntries.isEmpty
+        let recordingOff = (selectedFilter == .files || selectedFilter == .text) && !Defaults.clipboardTextCacheEnabled
+        emptySettingsButton.isHidden = emptyLabel.isHidden || !recordingOff
     }
 
     private func collapseDeleteConfirmationIfNeeded(for event: NSEvent) {
@@ -2727,13 +2917,9 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private static func availableFilters(for entries: [HistoryEntry]) -> Set<HistoryPanelFilter> {
-        var filters: Set<HistoryPanelFilter> = [.all]
-        for filter in HistoryPanelFilter.allCases where filter != .all {
-            if filter == .favorites {
-                if HistoryFavoritePolicy.shouldShowFilter(for: entries) {
-                    filters.insert(filter)
-                }
-            } else if entries.contains(where: { entryMatches($0, filter: filter) }) {
+        var filters = HistoryPanelFilter.persistentTabs
+        for filter in HistoryPanelFilter.allCases where !filters.contains(filter) {
+            if entries.contains(where: { entryMatches($0, filter: filter) }) {
                 filters.insert(filter)
             }
         }
@@ -2849,7 +3035,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         }
         previewPrefetchEntryIDs = entryIDs
 
-        let pixelSize = presentation.previewPixelSize
+        let pixelSize = presentation.previewPixelSize(on: window?.screen)
         for entry in entries {
             let entryID = entry.fileURL.standardizedFileURL.path
             guard previewPrefetchRequests[entryID] == nil else { continue }
@@ -2892,10 +3078,13 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private func updateCollectionLayout() {
-        let itemSize = NSSize(width: presentation.tileWidth, height: presentation.tileHeight)
+        let itemSize = NSSize(width: presentation.tileWidth, height: presentation.tileHeight(on: window?.screen))
         if collectionLayout.itemSize != itemSize {
             collectionLayout.itemSize = itemSize
             collectionLayout.invalidateLayout()
+            // Resize existing tiles during tracking, then request sharper thumbnails once it settles.
+            NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(refreshSizedPreviews), object: nil)
+            perform(#selector(refreshSizedPreviews), with: nil, afterDelay: 0.15)
         }
     }
 
@@ -3823,6 +4012,98 @@ private final class HistoryPanelSearchClearButton: NSControl {
     }
 }
 
+private final class HistoryPanelResizeHandle: NSView {
+    enum Edge: CaseIterable {
+        case left, right, bottom, bottomLeft, bottomRight
+
+        var changesHeight: Bool { self != .left && self != .right }
+        var isLeft: Bool { self == .left || self == .bottomLeft }
+        var cursor: NSCursor {
+            switch self {
+            case .left, .right: return .resizeLeftRight
+            case .bottom: return .resizeUpDown
+            case .bottomLeft: return ResizeHandleCursor.frameResizeCursor(for: .bottomLeft)
+            case .bottomRight: return ResizeHandleCursor.frameResizeCursor(for: .bottomRight)
+            }
+        }
+    }
+
+    private let presentation: HistoryPanelPresentation
+    private let edge: Edge
+    private var drag: (point: NSPoint, size: NSSize, screenSize: NSSize)?
+
+    init(presentation: HistoryPanelPresentation, edge: Edge) {
+        self.presentation = presentation
+        self.edge = edge
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func pin(to host: NSView) {
+        // Align to the notch shell's flared sides and keep rounded corners easy to grab.
+        let inset: CGFloat = presentation == .notch ? 10 : 0
+        let corner: CGFloat = 20
+        if edge == .bottom {
+            NSLayoutConstraint.activate([
+                leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: inset + corner),
+                trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -inset - corner),
+                bottomAnchor.constraint(equalTo: host.bottomAnchor),
+                heightAnchor.constraint(equalToConstant: 10),
+            ])
+            return
+        }
+        let horizontal = edge.isLeft
+            ? leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: inset)
+            : trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -inset)
+        NSLayoutConstraint.activate([
+            horizontal,
+            widthAnchor.constraint(equalToConstant: edge.changesHeight ? corner : 10),
+            bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: edge.changesHeight ? 0 : -corner),
+            edge.changesHeight ? heightAnchor.constraint(equalToConstant: corner)
+                               : topAnchor.constraint(equalTo: host.topAnchor, constant: 12),
+        ])
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: edge.cursor)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let panel = window as? HistoryFloatingPanel, let screen = panel.screen else { return }
+        let screenSize = presentation == .dialog ? screen.visibleFrame.size : screen.frame.size
+        guard screenSize.width > 0, screenSize.height > 0 else { return }
+        drag = (NSEvent.mouseLocation, panel.frame.size, screenSize)
+        panel.isResizingPanel = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let drag else { return }
+        let mouse = NSEvent.mouseLocation
+        var fraction = Defaults.historyPanelWidthFraction
+        var adjustment = Defaults.historyPanelHeightAdjustment
+        if edge != .bottom {
+            let dx = (mouse.x - drag.point.x) * (edge.isLeft ? -1 : 1)
+            let requested = (drag.size.width + 2 * dx) / drag.screenSize.width
+            fraction = presentation.width(on: drag.screenSize.width, fraction: requested) / drag.screenSize.width
+        }
+        if edge.changesHeight {
+            let requested = drag.size.height + drag.point.y - mouse.y - presentation.defaultHeight
+            adjustment = presentation.height(available: drag.screenSize.height, adjustment: requested) - presentation.defaultHeight
+        }
+        Defaults.setHistoryPanelSize(widthFraction: fraction, heightAdjustment: adjustment)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        drag = nil
+        (window as? HistoryFloatingPanel)?.isResizingPanel = false
+    }
+}
+
 private final class HistoryPanelActionButton: NSControl {
     private static let buttonSize: CGFloat = 28
     private static let iconSize: CGFloat = 13
@@ -3900,9 +4181,9 @@ private final class HistoryPanelActionButton: NSControl {
 }
 
 private final class HistoryPanelFilterButton: NSControl {
+    var onHover: (() -> Void)?
     let filter: HistoryPanelFilter
     private let label = NSTextField(labelWithString: "")
-    private let iconView = NSImageView()
 
     var title: String {
         get { label.stringValue }
@@ -3931,31 +4212,16 @@ private final class HistoryPanelFilterButton: NSControl {
         label.isSelectable = false
         addSubview(label)
 
-        iconView.imageScaling = .scaleProportionallyDown
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(iconView)
-
-        if let symbolName = filter.symbolName {
-            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-            iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-            iconView.image?.isTemplate = true
-            label.isHidden = true
-        } else {
-            iconView.isHidden = true
-        }
-
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 28),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 14),
-            iconView.heightAnchor.constraint(equalToConstant: 14),
         ])
 
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
         title = filter.title
         applyAppearance()
     }
@@ -3966,21 +4232,24 @@ private final class HistoryPanelFilterButton: NSControl {
 
     override var intrinsicContentSize: NSSize {
         NSSize(
-            width: filter.symbolName == nil ? label.intrinsicContentSize.width + 36 : 40,
+            width: label.intrinsicContentSize.width + 28,
             height: 28
         )
     }
 
     private func applyAppearance() {
         if isSelected {
-            layer?.backgroundColor = accentGreen.withAlphaComponent(0.95).cgColor
-            label.textColor = .black
-            iconView.contentTintColor = .black
+            layer?.backgroundColor = filter.tint.cgColor
+            label.textColor = filter == .favorites || filter == .colors ? .white : .black
         } else {
-            layer?.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
-            label.textColor = NSColor.white.withAlphaComponent(0.66)
-            iconView.contentTintColor = NSColor.white.withAlphaComponent(0.72)
+            layer?.backgroundColor = filter.tint.withAlphaComponent(0.22).cgColor
+            label.textColor = NSColor.white.withAlphaComponent(0.9)
         }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard !isSelected, !isHiddenOrHasHiddenAncestor, window?.ignoresMouseEvents == false else { return }
+        onHover?()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -4252,6 +4521,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
     private let cloudActionBarView = HistoryCloudActionBarView()
     private let badgeView = HistoryMediaBadgeView()
     private let selectionBadgeView = HistorySelectionBadgeView()
+    private let kindHeader = HistoryPanelCenteredTextView()
     private let metaLabel = HistoryPanelCenteredTextView()
     private var trackingArea: NSTrackingArea?
     private var previewRequest: HistoryImagePreviewRequest?
@@ -4293,6 +4563,14 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         layer?.backgroundColor = NSColor.white.withAlphaComponent(0.075).cgColor
         layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
         layer?.borderWidth = 1
+
+        layer?.masksToBounds = true
+        kindHeader.font = .systemFont(ofSize: 12, weight: .bold)
+        kindHeader.alignment = .left
+        kindHeader.horizontalInset = 12
+        kindHeader.verticalInset = 0
+        kindHeader.ignoresHitTesting = true
+        addSubview(kindHeader)
 
         imageView.imageScaling = .scaleProportionallyDown
         imageView.imageAlignment = .alignCenter
@@ -4406,11 +4684,13 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
     override func layout() {
         super.layout()
         let padding: CGFloat = 12
+        let headerHeight: CGFloat = presentation == .dialog ? 30 : 22
+        kindHeader.frame = NSRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
         imageView.frame = NSRect(
             x: padding,
-            y: padding,
+            y: headerHeight + padding,
             width: bounds.width - padding * 2,
-            height: presentation.previewHeight
+            height: presentation.previewHeight(on: window?.screen)
         )
         textPreviewLabel.frame = imageView.frame
         overlayLabel.frame = imageView.frame
@@ -4552,6 +4832,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         fileDragGeneration += 1
         lastFilePreviewRefresh = .distantPast
         self.entry = entry
+        refreshKindHeader()
         previewLoadState = .idle
 
         imageView.image = nil
@@ -4618,6 +4899,19 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         needsLayout = true
     }
 
+    func refreshKindHeader() {
+        let kind: HistoryPanelFilter
+        switch entry.kind {
+        case .image: kind = entry.fileURL.pathExtension.lowercased() == "gif" ? .gif : .screenshots
+        case .color: kind = .colors
+        case .video: kind = .mp4
+        case .text: kind = .text
+        case .files: kind = .files
+        }
+        kindHeader.stringValue = kind.title
+        kindHeader.layer?.backgroundColor = kind.tint.withAlphaComponent(0.42).cgColor
+    }
+
     func prepareForCollectionReuse() {
         cancelPendingPreviewLoad()
         setHovered(false)
@@ -4642,7 +4936,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
     }
 
     private func applyCachedPreviewIfAvailable() -> Bool {
-        let pixelSize = presentation.previewPixelSize
+        let pixelSize = presentation.previewPixelSize(on: window?.screen)
         switch entry.kind {
         case .image:
             guard let preview = HistoryImagePreviewLoader.shared.cachedPreview(
@@ -4923,7 +5217,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         case .files(let files):
             let url = entry.fileURL
             lastFilePreviewRefresh = Date()
-            previewRequest = HistoryFilePreviewLoader.shared.load(files: files, pixelSize: presentation.previewPixelSize) { [weak self] preview in
+            previewRequest = HistoryFilePreviewLoader.shared.load(files: files, pixelSize: presentation.previewPixelSize(on: window?.screen)) { [weak self] preview in
                 guard let self, self.previewLoadGeneration == generation,
                       self.previewLoadState == .loading, self.entry.fileURL == url else { return }
                 self.previewRequest = nil
@@ -4967,7 +5261,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
     }
 
     private func loadPreview(generation: Int) {
-        let pixelSize = presentation.previewPixelSize
+        let pixelSize = presentation.previewPixelSize(on: window?.screen)
         let url = entry.fileURL
         previewRequest?.cancel()
         previewRequest = HistoryImagePreviewLoader.shared.load(url: url, pixelSize: pixelSize) { [weak self] preview in
@@ -4981,7 +5275,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
 
     private func loadVideoPreview(generation: Int) {
         configureVideoPlaceholder()
-        let pixelSize = presentation.previewPixelSize
+        let pixelSize = presentation.previewPixelSize(on: window?.screen)
         let url = entry.fileURL
         previewRequest?.cancel()
         previewRequest = HistoryImagePreviewLoader.shared.loadVideoFrame(url: url, pixelSize: pixelSize) { [weak self] preview in
@@ -6148,22 +6442,17 @@ private enum HistoryPanelEntryActions {
         let copyText = asMarkdown
             ? "![](\(cloudURL.absoluteString))"
             : cloudURL.absoluteString
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(copyText, forType: .string)
+        ClipboardManager.copyHistoryTextToClipboard(copyText)
         ToastWindow.show(message: asMarkdown ? L10n.uploadCopiedMarkdown : L10n.uploadCopied)
         return true
     }
 
     static func copyImages(_ entries: [HistoryEntry]) -> Bool {
-        let imageURLs = entries.compactMap { entry -> NSURL? in
+        let imageURLs = entries.compactMap { entry -> URL? in
             guard case .image = entry.kind else { return nil }
-            return entry.fileURL as NSURL
+            return entry.fileURL
         }
-        guard !imageURLs.isEmpty else { return false }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.writeObjects(imageURLs) else { return false }
+        guard ClipboardManager.copyHistoryFilesToClipboard(imageURLs) else { return false }
         ToastWindow.show(message: L10n.copiedToClipboard)
         if entries.count == 1, let entry = entries.first {
             HistoryManager.shared.promoteCopiedEntryIfNeeded(entry)

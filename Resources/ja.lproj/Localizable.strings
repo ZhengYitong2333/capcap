@@ -16,12 +16,10 @@
 "pinAcrossSpacesHint" = "オンにすると新しいピン画像がすべてのデスクトップとフルスクリーン操作スペースに表示されます";
 "showCopyToast" = "コピー時に通知を表示";
 "showCopyToastHint" = "オフにするとクリップボードへコピーした際の通知を表示しません";
-"historyCacheToggleLabel" = "スクリーンショットをキャッシュ";
+"historyCacheToggleLabel" = "スクリーンショットとクリップボードの画像を保存";
 "historyCacheToggleHint" = "最近のスクリーンショット、取得した色、アップロード結果を保存し、履歴パネルからすばやく再コピーできます";
 "clipboardTextCacheToggleLabel" = "クリップボードのテキストとファイルを記録";
 "clipboardTextCacheToggleHint" = "ファイルを複製せずテキストと元ファイルへの参照を保存";
-"clipboardTextHistoryLimitLabel" = "テキスト / ファイル履歴の上限";
-"historyCacheLabel" = "画像とメディアの履歴上限";
 "historyPanelDisplayModeLabel" = "履歴パネルの表示方式";
 "historyPanelDisplayModeHint" = "ダイアログまたはノッチで履歴を表示";
 "historyPanelDialogMode" = "ダイアログ";
@@ -151,7 +149,7 @@
 "historyPanelFavoriteFailed" = "お気に入りを変更できません";
 "historyDeletedSkippingFavorites" = "項目を%d件削除、お気に入りを%d件スキップ";
 "historyPanelFilterAll" = "すべて";
-"historyPanelFilterScreenshots" = "スクリーンショット";
+"historyPanelFilterScreenshots" = "画像";
 "historyPanelFilterGIF" = "GIF";
 "historyPanelFilterMP4" = "MP4";
 "historyPanelFilterColors" = "カラー";
@@ -756,3 +754,7 @@
 "historyFilePreviewRetry" = "再確認";
 
 "historyFilePreviewUnavailable" = "このファイルはプレビューできません";
+"toolbarSize" = "ツールバーのサイズ";
+"historyRecordingSettings" = "設定で履歴の記録を有効にする";
+"imageCacheSizeLabel" = "画像キャッシュの容量上限";
+"historyCardSizeAction" = "カードサイズを切り替え · 現在 %d%%";

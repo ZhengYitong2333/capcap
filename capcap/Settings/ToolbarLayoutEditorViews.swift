@@ -538,6 +538,16 @@ final class ToolbarSlotGridView: NSView {
 /// A non-interactive miniature of the editor showing where the current
 /// layout places the primary and side toolbars around a selection.
 final class ToolbarLayoutPreviewView: NSView {
+    var scale = Defaults.toolbarScale {
+        didSet {
+            primaryStripView.scale = scale
+            sideStripView.scale = scale
+            invalidateIntrinsicContentSize()
+            updateToolbarPreviews()
+            needsDisplay = true
+        }
+    }
+
     var layout: ToolbarLayout = .default {
         didSet {
             invalidateIntrinsicContentSize()
@@ -566,9 +576,9 @@ final class ToolbarLayoutPreviewView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private let miniButton: CGFloat = 15
-    private let miniGap: CGFloat = 3
-    private let miniPad: CGFloat = 6
+    private var miniButton: CGFloat { 15 * scale }
+    private var miniGap: CGFloat { 3 * scale }
+    private var miniPad: CGFloat { 6 * scale }
     private let minimumHeight: CGFloat = 188
     private let minimumSelectionHeight: CGFloat = 116
     private let maximumSidePreviewItems = ToolbarLayout.default.side.count
@@ -743,13 +753,14 @@ private final class ToolbarPreviewScrollView: NSScrollView {
 
 private final class ToolbarPreviewStripView: NSView {
     let orientation: ToolbarView.Orientation
+    var scale = Defaults.toolbarScale { didSet { needsDisplay = true } }
     var items: [ToolbarItemID] = [] {
         didSet { needsDisplay = true }
     }
 
-    private let miniButton: CGFloat = 15
-    private let miniGap: CGFloat = 3
-    private let miniPad: CGFloat = 6
+    private var miniButton: CGFloat { 15 * scale }
+    private var miniGap: CGFloat { 3 * scale }
+    private var miniPad: CGFloat { 6 * scale }
 
     init(orientation: ToolbarView.Orientation) {
         self.orientation = orientation
@@ -790,7 +801,7 @@ private final class ToolbarPreviewStripView: NSView {
             case .confirm: color = accentGreen
             default:       color = .white
             }
-            if let icon = tintedToolbarIcon(id, pointSize: 9, color: color) {
+            if let icon = tintedToolbarIcon(id, pointSize: 9 * scale, color: color) {
                 let size = icon.size
                 icon.draw(in: NSRect(
                     x: slot.midX - size.width / 2,

@@ -22,6 +22,7 @@ struct ClipboardManager {
     ) {
         pasteboard.clearContents()
 
+        pasteboard.setString("1", forType: skipClipboardHistoryPasteboardType)
         if let pngData = image.pngDataPreservingBacking() {
             pasteboard.setData(pngData, forType: .png)
         }
@@ -34,6 +35,7 @@ struct ClipboardManager {
     static func copyToClipboard(imageOutput: EncodedClipboardImageOutput) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
+        pasteboard.setString("1", forType: skipClipboardHistoryPasteboardType)
         pasteboard.setData(imageOutput.primary.data, forType: imageOutput.primary.pasteboardType)
         if let tiffData = imageOutput.tiffData {
             pasteboard.setData(tiffData, forType: .tiff)
@@ -102,6 +104,9 @@ final class ClipboardTextHistoryMonitor: NSObject {
             name: .clipboardTextCacheEnabledDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(cacheSettingChanged), name: .historyCacheEnabledDidChange, object: nil
+        )
         updateTimerState()
     }
 
@@ -118,7 +123,7 @@ final class ClipboardTextHistoryMonitor: NSObject {
     }
 
     private func updateTimerState() {
-        if Defaults.clipboardTextCacheEnabled {
+        if Defaults.clipboardTextCacheEnabled || Defaults.historyCacheEnabled {
             startTimer()
         } else {
             stopTimer()
@@ -144,13 +149,18 @@ final class ClipboardTextHistoryMonitor: NSObject {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
         lastChangeCount = changeCount
-        guard Defaults.clipboardTextCacheEnabled,
-              pasteboard.availableType(from: [skipClipboardHistoryPasteboardType]) == nil else { return }
+        let excludedTypes = [
+            skipClipboardHistoryPasteboardType,
+            NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
+            NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+        ]
+        guard pasteboard.availableType(from: excludedTypes) == nil else { return }
 
         // Inspect declared file types before requesting a text representation.
         // A pasted path string must remain text even if it names a real file.
         let legacyFiles = NSPasteboard.PasteboardType("NSFilenamesPboardType")
         if pasteboard.availableType(from: [.fileURL, legacyFiles]) != nil {
+            guard Defaults.clipboardTextCacheEnabled else { return }
             var urls = pasteboard.readObjects(forClasses: [NSURL.self],
                 options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
             if urls.isEmpty, let paths = pasteboard.propertyList(forType: legacyFiles) as? [String] {
@@ -164,7 +174,14 @@ final class ClipboardTextHistoryMonitor: NSObject {
         // accompanying filename or TIFF icon as an ordinary history item.
         let promisedTypes = ["com.apple.pasteboard.promised-file-url", "com.apple.NSFilesPromisePboardType"]
         if pasteboard.types?.contains(where: { promisedTypes.contains($0.rawValue) }) == true { return }
-        guard
+        if let bitmapType = pasteboard.availableType(from: ClipboardImageSource.bitmapPasteboardTypes) {
+            guard Defaults.historyCacheEnabled,
+                  let data = pasteboard.data(forType: bitmapType),
+                  pasteboard.changeCount == changeCount else { return }
+            HistoryManager.shared.addClipboardBitmap(data)
+            return
+        }
+        guard Defaults.clipboardTextCacheEnabled,
               let text = pasteboard.string(forType: .string),
               !text.isEmpty, pasteboard.changeCount == changeCount else { return }
         if Defaults.historyCacheEnabled,

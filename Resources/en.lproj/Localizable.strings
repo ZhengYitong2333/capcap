@@ -16,12 +16,10 @@
 "pinAcrossSpacesHint" = "New pinned images appear on every desktop and full-screen Space";
 "showCopyToast" = "Show Copy Confirmation";
 "showCopyToastHint" = "Show the toast after an image or file is copied to the clipboard";
-"historyCacheToggleLabel" = "Cache Screenshots";
+"historyCacheToggleLabel" = "Cache screenshots and clipboard images";
 "historyCacheToggleHint" = "Store recent screenshots, picked colors, and upload links for quick reuse from the history panel";
 "clipboardTextCacheToggleLabel" = "Record Clipboard Text and Files";
 "clipboardTextCacheToggleHint" = "Keep text and source file references without copying files";
-"clipboardTextHistoryLimitLabel" = "Text / File History Limit";
-"historyCacheLabel" = "Image and Media History Limit";
 "historyPanelDisplayModeLabel" = "History Panel Display";
 "historyPanelDisplayModeHint" = "Choose Dialog or Notch for history";
 "historyPanelDialogMode" = "Dialog";
@@ -151,7 +149,7 @@
 "historyPanelFavoriteFailed" = "Could not change favorite";
 "historyDeletedSkippingFavorites" = "Items deleted: %d, favorites skipped: %d";
 "historyPanelFilterAll" = "All";
-"historyPanelFilterScreenshots" = "Screenshots";
+"historyPanelFilterScreenshots" = "Images";
 "historyPanelFilterGIF" = "GIF";
 "historyPanelFilterMP4" = "MP4";
 "historyPanelFilterColors" = "Colors";
@@ -756,3 +754,7 @@
 "historyFilePreviewRetry" = "Check again";
 
 "historyFilePreviewUnavailable" = "Preview unavailable for this file";
+"toolbarSize" = "Toolbar size";
+"historyRecordingSettings" = "Open settings to enable recording";
+"imageCacheSizeLabel" = "Image cache size limit";
+"historyCardSizeAction" = "Change card size · current size %d%%";

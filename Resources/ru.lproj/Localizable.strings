@@ -16,12 +16,10 @@
 "pinAcrossSpacesHint" = "Новые закрепленные изображения появляются на каждом рабочем столе и полноэкранном Space";
 "showCopyToast" = "Показывать уведомление о копировании";
 "showCopyToastHint" = "Отключите чтобы не показывать уведомление о копировании в буфер обмена";
-"historyCacheToggleLabel" = "Кэшировать снимки";
+"historyCacheToggleLabel" = "Сохранять снимки экрана и изображения из буфера обмена";
 "historyCacheToggleHint" = "Сохраняет недавние снимки, выбранные цвета и ссылки загрузок для быстрого повторного копирования из панели истории";
 "clipboardTextCacheToggleLabel" = "Записывать текст и файлы буфера обмена";
 "clipboardTextCacheToggleHint" = "Сохранять текст и ссылки на исходные файлы без копирования файлов";
-"clipboardTextHistoryLimitLabel" = "Лимит истории текста / файлов";
-"historyCacheLabel" = "Лимит истории изображений и медиа";
 "historyPanelDisplayModeLabel" = "Отображение панели истории";
 "historyPanelDisplayModeHint" = "Выберите диалог или вырез для истории";
 "historyPanelDialogMode" = "Диалог";
@@ -151,7 +149,7 @@
 "historyPanelFavoriteFailed" = "Не удалось изменить избранное";
 "historyDeletedSkippingFavorites" = "Удалено объектов: %d, избранных пропущено: %d";
 "historyPanelFilterAll" = "Все";
-"historyPanelFilterScreenshots" = "Снимки";
+"historyPanelFilterScreenshots" = "Изображения";
 "historyPanelFilterGIF" = "GIF";
 "historyPanelFilterMP4" = "MP4";
 "historyPanelFilterColors" = "Цвета";
@@ -756,3 +754,7 @@
 "historyFilePreviewRetry" = "Проверить снова";
 
 "historyFilePreviewUnavailable" = "Предпросмотр этого файла недоступен";
+"toolbarSize" = "Размер панелей инструментов";
+"historyRecordingSettings" = "Включить запись в настройках";
+"imageCacheSizeLabel" = "Лимит размера кэша изображений";
+"historyCardSizeAction" = "Изменить размер карточек · сейчас %d%%";

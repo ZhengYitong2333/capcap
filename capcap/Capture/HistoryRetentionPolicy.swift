@@ -1,7 +1,6 @@
 import Foundation
 
 enum HistoryRetentionPolicy {
-    static let mediaExtensions: Set<String> = ["png", "gif", "mp4", "color"]
     static let maximumTextEntryBytes = 1 * 1024 * 1024
     static let maximumTextHistoryBytes = 20 * 1024 * 1024
 
@@ -12,36 +11,33 @@ enum HistoryRetentionPolicy {
     }
 
     @discardableResult
-    static func pruneMedia(in directory: URL, limit: Int) -> Int {
-        let files = storedFiles(in: directory, allowedExtensions: mediaExtensions)
+    static func pruneMedia(in directory: URL, imageByteLimit: Int) -> Int {
+        let images = storedFiles(in: directory, allowedExtensions: ["png", "gif"])
             .filter { !HistoryManager.isFavorite(url: $0.url) }
             .sorted(by: newestFirst)
-        return remove(files.dropFirst(max(0, limit)).map(\.url))
-    }
-
-    @discardableResult
-    static func pruneFileReferences(in directory: URL, limit: Int) -> Int {
-        let files = storedFiles(in: directory, allowedExtensions: ["fileref"])
-            .filter { !HistoryManager.isFavorite(url: $0.url) }
-            .sorted(by: newestFirst)
-        return remove(files.dropFirst(max(0, limit)).map(\.url))
+        var expired: [URL] = []
+        var imageBytes = images.reduce(0) { $0 + $1.byteCount }
+        let capacity = max(0, imageByteLimit)
+        for image in images.reversed() {
+            guard imageBytes > capacity else { break }
+            expired.append(image.url)
+            imageBytes -= image.byteCount
+        }
+        return remove(expired)
     }
 
     @discardableResult
     static func pruneText(
         in directory: URL,
-        limit: Int,
         maximumEntryBytes: Int = maximumTextEntryBytes,
         maximumTotalBytes: Int = maximumTextHistoryBytes
     ) -> Int {
         let files = storedFiles(in: directory, allowedExtensions: ["txt"])
             .filter { !HistoryManager.isFavorite(url: $0.url) }
             .sorted(by: newestFirst)
-        let normalizedLimit = max(0, limit)
         let normalizedEntryLimit = max(0, maximumEntryBytes)
         let normalizedTotalLimit = max(0, maximumTotalBytes)
         var seenContents = Set<Data>()
-        var keptCount = 0
         var keptBytes = 0
         var urlsToRemove: [URL] = []
 
@@ -56,15 +52,13 @@ enum HistoryRetentionPolicy {
             }
 
             let isDuplicate = seenContents.contains(data)
-            let exceedsCount = keptCount >= normalizedLimit
             let exceedsTotalBytes = keptBytes + data.count > normalizedTotalLimit
-            guard !isDuplicate, !exceedsCount, !exceedsTotalBytes else {
+            guard !isDuplicate, !exceedsTotalBytes else {
                 urlsToRemove.append(file.url)
                 continue
             }
 
             seenContents.insert(data)
-            keptCount += 1
             keptBytes += data.count
         }
 

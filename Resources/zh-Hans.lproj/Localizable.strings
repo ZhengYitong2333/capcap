@@ -16,12 +16,10 @@
 "pinAcrossSpacesHint" = "开启后新贴图会出现在所有桌面与全屏空间";
 "showCopyToast" = "复制成功后显示提示";
 "showCopyToastHint" = "关闭后不再弹出已添加到剪贴板的提示，错误提示不受影响";
-"historyCacheToggleLabel" = "缓存截图";
+"historyCacheToggleLabel" = "缓存截图与剪贴板图片";
 "historyCacheToggleHint" = "保存最近截图、取色和上传结果，便于从历史面板快速再次复制";
 "clipboardTextCacheToggleLabel" = "记录剪贴板文本与文件";
 "clipboardTextCacheToggleHint" = "保存文本和源文件引用，不复制文件副本";
-"clipboardTextHistoryLimitLabel" = "文本 / 文件历史数量";
-"historyCacheLabel" = "图片与媒体历史数量";
 "historyPanelDisplayModeLabel" = "历史面板显示方式";
 "historyPanelDisplayModeHint" = "选择通过弹窗或刘海查看历史记录";
 "historyPanelDialogMode" = "弹窗";
@@ -151,7 +149,7 @@
 "historyPanelFavoriteFailed" = "无法更改收藏";
 "historyDeletedSkippingFavorites" = "已删除 %d 个项目，跳过 %d 个收藏";
 "historyPanelFilterAll" = "全部";
-"historyPanelFilterScreenshots" = "截图";
+"historyPanelFilterScreenshots" = "图片";
 "historyPanelFilterGIF" = "GIF";
 "historyPanelFilterMP4" = "MP4";
 "historyPanelFilterColors" = "颜色";
@@ -756,3 +754,7 @@
 "historyFilePreviewRetry" = "重新检查";
 
 "historyFilePreviewUnavailable" = "此文件无法预览";
+"toolbarSize" = "工具栏大小";
+"historyRecordingSettings" = "前往设置开启记录";
+"imageCacheSizeLabel" = "图片缓存空间上限";
+"historyCardSizeAction" = "切换卡片大小（当前 %d%%）";

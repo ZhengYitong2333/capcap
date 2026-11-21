@@ -23,11 +23,24 @@ final class HistoryRetentionPolicyTests: XCTestCase {
         let newestImage = try makeFile(name: "new.png", contents: Data([0x03]), age: 10)
         let text = try makeFile(name: "note.txt", contents: Data("note".utf8), age: 5)
 
-        XCTAssertEqual(HistoryRetentionPolicy.pruneMedia(in: directoryURL, limit: 2), 1)
+        XCTAssertEqual(HistoryRetentionPolicy.pruneMedia(in: directoryURL, imageByteLimit: 2), 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldestImage.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: middleImage.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: newestImage.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: text.path))
+    }
+
+    func testImageBudgetEvictsOldestImagesAndExemptsFavoritesAndVideo() throws {
+        let old = try makeFile(name: "old.png", contents: Data(count: 4), age: 40)
+        let favorite = try makeFile(name: "saved.png", contents: Data(count: 20), age: 30)
+        let recent = try makeFile(name: "new.gif", contents: Data(count: 6), age: 20)
+        let video = try makeFile(name: "video.mp4", contents: Data(count: 20), age: 10)
+        XCTAssertTrue(HistoryManager.setFavorite(true, on: favorite))
+        XCTAssertEqual(HistoryRetentionPolicy.pruneMedia(in: directoryURL, imageByteLimit: 6), 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        for kept in [favorite, recent, video] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path))
+        }
     }
 
     func testTextLimitDoesNotConsumeOrDeleteMediaEntries() throws {
@@ -35,7 +48,7 @@ final class HistoryRetentionPolicyTests: XCTestCase {
         let oldestText = try makeFile(name: "old.txt", contents: Data("old".utf8), age: 20)
         let newestText = try makeFile(name: "new.txt", contents: Data("new".utf8), age: 10)
 
-        XCTAssertEqual(HistoryRetentionPolicy.pruneText(in: directoryURL, limit: 1), 1)
+        XCTAssertEqual(HistoryRetentionPolicy.pruneText(in: directoryURL, maximumTotalBytes: 3), 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: image.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldestText.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: newestText.path))
@@ -46,7 +59,7 @@ final class HistoryRetentionPolicyTests: XCTestCase {
         let newDuplicate = try makeFile(name: "new.txt", contents: Data("same text".utf8), age: 10)
         let distinct = try makeFile(name: "distinct.txt", contents: Data("Same text".utf8), age: 5)
 
-        XCTAssertEqual(HistoryRetentionPolicy.pruneText(in: directoryURL, limit: 10), 1)
+        XCTAssertEqual(HistoryRetentionPolicy.pruneText(in: directoryURL), 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldDuplicate.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: newDuplicate.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: distinct.path))
@@ -61,7 +74,6 @@ final class HistoryRetentionPolicyTests: XCTestCase {
         XCTAssertEqual(
             HistoryRetentionPolicy.pruneText(
                 in: directoryURL,
-                limit: 10,
                 maximumEntryBytes: 4,
                 maximumTotalBytes: 5
             ),
@@ -80,8 +92,7 @@ final class HistoryRetentionPolicyTests: XCTestCase {
         let newest = try makeFile(name: "newest.png", contents: Data([0x04]), age: 10)
         XCTAssertTrue(HistoryManager.setFavorite(true, on: oldest))
 
-        // limit 2 keeps the 2 newest non-favorites; `oldest` is a favorite and therefore exempt + preserved.
-        XCTAssertEqual(HistoryRetentionPolicy.pruneMedia(in: directoryURL, limit: 2), 1)
+        XCTAssertEqual(HistoryRetentionPolicy.pruneMedia(in: directoryURL, imageByteLimit: 2), 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: oldest.path),
             "favorite file must survive pruning")
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path),
@@ -97,8 +108,7 @@ final class HistoryRetentionPolicyTests: XCTestCase {
         let newest = try makeFile(name: "newest.txt", contents: Data("newest".utf8), age: 10)
         XCTAssertTrue(HistoryManager.setFavorite(true, on: oldest))
 
-        // limit 2 keeps the 2 newest non-favorite text files; `oldest` is a favorite and remains preserved.
-        XCTAssertEqual(HistoryRetentionPolicy.pruneText(in: directoryURL, limit: 2), 1)
+        XCTAssertEqual(HistoryRetentionPolicy.pruneText(in: directoryURL, maximumTotalBytes: 11), 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: oldest.path),
             "favorite file must survive pruning")
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path),

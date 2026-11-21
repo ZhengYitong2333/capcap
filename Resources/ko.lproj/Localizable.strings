@@ -16,12 +16,10 @@
 "pinAcrossSpacesHint" = "켜면 새 고정 이미지가 모든 데스크톱과 전체 화면 Space에 표시됩니다";
 "showCopyToast" = "복사 확인 알림 표시";
 "showCopyToastHint" = "끄면 클립보드에 복사할 때 알림이 표시되지 않습니다";
-"historyCacheToggleLabel" = "스크린샷 캐시";
+"historyCacheToggleLabel" = "스크린샷 및 클립보드 이미지 캐시";
 "historyCacheToggleHint" = "최근 스크린샷, 선택한 색상, 업로드 결과를 저장해 기록 패널에서 빠르게 다시 복사할 수 있습니다";
 "clipboardTextCacheToggleLabel" = "클립보드 텍스트 및 파일 기록";
 "clipboardTextCacheToggleHint" = "파일을 복제하지 않고 텍스트와 원본 파일 참조 저장";
-"clipboardTextHistoryLimitLabel" = "텍스트 / 파일 기록 한도";
-"historyCacheLabel" = "이미지와 미디어 기록 한도";
 "historyPanelDisplayModeLabel" = "기록 패널 표시 방식";
 "historyPanelDisplayModeHint" = "팝업 또는 노치로 기록 보기";
 "historyPanelDialogMode" = "팝업";
@@ -151,7 +149,7 @@
 "historyPanelFavoriteFailed" = "즐겨찾기를 변경할 수 없습니다";
 "historyDeletedSkippingFavorites" = "항목 %d개 삭제, 즐겨찾기 %d개 건너뜀";
 "historyPanelFilterAll" = "전체";
-"historyPanelFilterScreenshots" = "스크린샷";
+"historyPanelFilterScreenshots" = "이미지";
 "historyPanelFilterGIF" = "GIF";
 "historyPanelFilterMP4" = "MP4";
 "historyPanelFilterColors" = "색상";
@@ -756,3 +754,7 @@
 "historyFilePreviewRetry" = "다시 확인";
 
 "historyFilePreviewUnavailable" = "이 파일을 미리 볼 수 없음";
+"toolbarSize" = "도구 막대 크기";
+"historyRecordingSettings" = "설정에서 기록 켜기";
+"imageCacheSizeLabel" = "이미지 캐시 용량 한도";
+"historyCardSizeAction" = "카드 크기 변경 · 현재 %d%%";

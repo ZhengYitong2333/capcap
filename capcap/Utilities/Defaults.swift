@@ -73,10 +73,11 @@ extension Notification.Name {
     static let languageDidChange = Notification.Name("capcap.languageDidChange")
     static let historyCacheEnabledDidChange = Notification.Name("capcap.historyCacheEnabledDidChange")
     static let clipboardTextCacheEnabledDidChange = Notification.Name("capcap.clipboardTextCacheEnabledDidChange")
-    static let historyCacheLimitDidChange = Notification.Name("capcap.historyCacheLimitDidChange")
-    static let clipboardTextHistoryLimitDidChange = Notification.Name("capcap.clipboardTextHistoryLimitDidChange")
+    static let imageCacheCapacityDidChange = Notification.Name("capcap.imageCacheCapacityDidChange")
     static let historyDidUpdate = Notification.Name("capcap.historyDidUpdate")
     static let recordingSaveDirectoryDidChange = Notification.Name("capcap.recordingSaveDirectoryDidChange")
+    static let historyPanelSizeDidChange = Notification.Name("capcap.historyPanelSizeDidChange")
+    static let historyCardSizeDidChange = Notification.Name("capcap.historyCardSizeDidChange")
     static let historyPanelDisplayModesDidChange = Notification.Name("capcap.historyPanelDisplayModesDidChange")
     static let hotkeyDidChange = Notification.Name("capcap.hotkeyDidChange")
     static let editorShortcutsDidChange = Notification.Name("capcap.editorShortcutsDidChange")
@@ -105,12 +106,17 @@ enum L10n {
     static var pinAcrossSpacesHint: String { s("pinAcrossSpacesHint") }
     static var showCopyToast: String { s("showCopyToast") }
     static var showCopyToastHint: String { s("showCopyToastHint") }
+    static var toolbarSize: String { s("toolbarSize") }
+    static var historyRecordingSettings: String { s("historyRecordingSettings") }
     static var historyCacheToggleLabel: String { s("historyCacheToggleLabel") }
     static var historyCacheToggleHint: String { s("historyCacheToggleHint") }
     static var clipboardTextCacheToggleLabel: String { s("clipboardTextCacheToggleLabel") }
     static var clipboardTextCacheToggleHint: String { s("clipboardTextCacheToggleHint") }
-    static var clipboardTextHistoryLimitLabel: String { s("clipboardTextHistoryLimitLabel") }
-    static var historyCacheLabel: String { s("historyCacheLabel") }
+    static var imageCacheSizeLabel: String { s("imageCacheSizeLabel") }
+    static func historyCardSizeAction(_ percent: Int) -> String {
+        String(format: s("historyCardSizeAction"), percent)
+    }
+
     static var historyPanelDisplayModeLabel: String { s("historyPanelDisplayModeLabel") }
     static var historyPanelDisplayModeHint: String { s("historyPanelDisplayModeHint") }
     static var historyPanelDialogMode: String { s("historyPanelDialogMode") }
@@ -2089,12 +2095,20 @@ struct Defaults {
         }
     }
 
-    static let historyCacheMin: Int = 10
-    static let historyCacheMax: Int = 200
-    static let historyCacheStep: Int = 10
-    static let clipboardTextHistoryLimitMin: Int = 50
-    static let clipboardTextHistoryLimitMax: Int = 500
-    static let clipboardTextHistoryLimitStep: Int = 50
+    static let toolbarSizePercentages = [75, 100, 125, 150]
+    static var toolbarSizePercent: Int {
+        get {
+            let value = defaults.integer(forKey: "editor.toolbarSizePercent")
+            return toolbarSizePercentages.contains(value) ? value : 100
+        }
+        set {
+            defaults.set(toolbarSizePercentages.contains(newValue) ? newValue : 100,
+                         forKey: "editor.toolbarSizePercent")
+        }
+    }
+
+    static var toolbarScale: CGFloat { CGFloat(toolbarSizePercent) / 100 }
+
 
     static var historyCacheEnabled: Bool {
         get {
@@ -2319,23 +2333,6 @@ struct Defaults {
         }
     }
 
-    static var clipboardTextHistoryLimit: Int {
-        get {
-            if defaults.object(forKey: "clipboardTextHistoryLimit") == nil {
-                return 100
-            }
-            let value = defaults.integer(forKey: "clipboardTextHistoryLimit")
-            return normalizedClipboardTextHistoryLimit(value)
-        }
-        set {
-            defaults.set(
-                normalizedClipboardTextHistoryLimit(newValue),
-                forKey: "clipboardTextHistoryLimit"
-            )
-            NotificationCenter.default.post(name: .clipboardTextHistoryLimitDidChange, object: nil)
-        }
-    }
-
     static var isHistoryCacheAvailable: Bool {
         historyCacheEnabled || clipboardTextCacheEnabled || HistoryManager.shared.hasFavoriteEntries()
     }
@@ -2357,34 +2354,57 @@ struct Defaults {
         }
     }
 
-    static var historyCacheLimit: Int {
+    enum ImageCacheCapacity: Int, CaseIterable {
+        // Decimal MB, matching the storage units in Finder.
+        case mb200 = 200, mb500 = 500, gb1 = 1000, gb5 = 5000, gb10 = 10000
+
+        var bytes: Int { rawValue * 1_000_000 }
+        var title: String {
+            rawValue < 1000 ? "\(rawValue) MB" : "\(rawValue / 1000) GB"
+        }
+    }
+
+    static var imageCacheCapacity: ImageCacheCapacity {
+        get { ImageCacheCapacity(rawValue: defaults.integer(forKey: "imageCacheCapacityMB")) ?? .gb1 }
+        set {
+            guard newValue != imageCacheCapacity else { return }
+            defaults.set(newValue.rawValue, forKey: "imageCacheCapacityMB")
+            NotificationCenter.default.post(name: .imageCacheCapacityDidChange, object: nil)
+        }
+    }
+
+    static let defaultHistoryPanelWidthFraction: CGFloat = 0.88
+
+    static var historyPanelWidthFraction: CGFloat {
+        let saved = defaults.double(forKey: "historyPanelWidthFraction")
+        return saved > 0 && saved <= 1 ? CGFloat(saved) : defaultHistoryPanelWidthFraction
+    }
+
+    static var historyPanelHeightAdjustment: CGFloat {
+        CGFloat(defaults.double(forKey: "historyPanelHeightAdjustment"))
+    }
+
+    static func setHistoryPanelSize(widthFraction: CGFloat, heightAdjustment: CGFloat) {
+        guard widthFraction > 0, widthFraction <= 1, heightAdjustment.isFinite else { return }
+        guard widthFraction != historyPanelWidthFraction || heightAdjustment != historyPanelHeightAdjustment else { return }
+        defaults.set(Double(widthFraction), forKey: "historyPanelWidthFraction")
+        defaults.set(Double(heightAdjustment), forKey: "historyPanelHeightAdjustment")
+        NotificationCenter.default.post(name: .historyPanelSizeDidChange, object: nil)
+    }
+
+    static let historyCardSizeRange = 75...200
+
+    static var historyCardSizePercent: Int {
         get {
-            if defaults.object(forKey: "historyCacheLimit") == nil {
-                return 10
-            }
-            let val = defaults.integer(forKey: "historyCacheLimit")
-            return normalizedHistoryCacheLimit(val)
+            let saved = defaults.integer(forKey: "historyCardSize")
+            return historyCardSizeRange.contains(saved) ? saved : 100
         }
         set {
-            defaults.set(normalizedHistoryCacheLimit(newValue), forKey: "historyCacheLimit")
-            NotificationCenter.default.post(name: .historyCacheLimitDidChange, object: nil)
+            let value = min(max(newValue, historyCardSizeRange.lowerBound), historyCardSizeRange.upperBound)
+            guard historyCardSizePercent != value else { return }
+            defaults.set(value, forKey: "historyCardSize")
+            NotificationCenter.default.post(name: .historyCardSizeDidChange, object: nil)
         }
-    }
-
-    private static func normalizedHistoryCacheLimit(_ value: Int) -> Int {
-        let clamped = min(max(value, historyCacheMin), historyCacheMax)
-        let offset = clamped - historyCacheMin
-        let snapped = historyCacheMin + ((offset + historyCacheStep / 2) / historyCacheStep) * historyCacheStep
-        return min(max(snapped, historyCacheMin), historyCacheMax)
-    }
-
-    private static func normalizedClipboardTextHistoryLimit(_ value: Int) -> Int {
-        let clamped = min(max(value, clipboardTextHistoryLimitMin), clipboardTextHistoryLimitMax)
-        let offset = clamped - clipboardTextHistoryLimitMin
-        let snapped = clipboardTextHistoryLimitMin
-            + ((offset + clipboardTextHistoryLimitStep / 2) / clipboardTextHistoryLimitStep)
-            * clipboardTextHistoryLimitStep
-        return min(max(snapped, clipboardTextHistoryLimitMin), clipboardTextHistoryLimitMax)
     }
 
     enum HistoryNotchTriggerMode: String, CaseIterable {

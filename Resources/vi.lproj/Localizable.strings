@@ -16,12 +16,10 @@
 "pinAcrossSpacesHint" = "Ảnh ghim mới xuất hiện trên mọi màn hình nền và Space toàn màn hình";
 "showCopyToast" = "Hiện thông báo sao chép";
 "showCopyToastHint" = "Tắt để ẩn thông báo khi nội dung được sao chép vào bảng tạm";
-"historyCacheToggleLabel" = "Lưu ảnh chụp vào bộ nhớ";
+"historyCacheToggleLabel" = "Lưu ảnh chụp màn hình và ảnh từ bảng nhớ tạm";
 "historyCacheToggleHint" = "Lưu ảnh chụp gần đây, màu đã chọn và liên kết tải lên để sao chép lại nhanh từ bảng lịch sử";
 "clipboardTextCacheToggleLabel" = "Ghi lại văn bản và tệp bảng nhớ tạm";
 "clipboardTextCacheToggleHint" = "Lưu văn bản và tham chiếu tệp nguồn mà không sao chép tệp";
-"clipboardTextHistoryLimitLabel" = "Giới hạn lịch sử văn bản / tệp";
-"historyCacheLabel" = "Giới hạn lịch sử hình ảnh và phương tiện";
 "historyPanelDisplayModeLabel" = "Cách hiển thị bảng lịch sử";
 "historyPanelDisplayModeHint" = "Chọn Hộp thoại hoặc tai thỏ để xem lịch sử";
 "historyPanelDialogMode" = "Hộp thoại";
@@ -151,7 +149,7 @@
 "historyPanelFavoriteFailed" = "Không thể thay đổi mục yêu thích";
 "historyDeletedSkippingFavorites" = "Đã xóa %d mục, bỏ qua %d mục yêu thích";
 "historyPanelFilterAll" = "Tất cả";
-"historyPanelFilterScreenshots" = "Ảnh chụp";
+"historyPanelFilterScreenshots" = "Hình ảnh";
 "historyPanelFilterGIF" = "GIF";
 "historyPanelFilterMP4" = "MP4";
 "historyPanelFilterColors" = "Màu";
@@ -756,3 +754,7 @@
 "historyFilePreviewRetry" = "Kiểm tra lại";
 
 "historyFilePreviewUnavailable" = "Không thể xem trước tệp này";
+"toolbarSize" = "Kích thước thanh công cụ";
+"historyRecordingSettings" = "Mở cài đặt để bật ghi lịch sử";
+"imageCacheSizeLabel" = "Giới hạn dung lượng bộ nhớ đệm ảnh";
+"historyCardSizeAction" = "Đổi kích thước thẻ · hiện tại %d%%";

@@ -89,6 +89,11 @@ class SettingsWindowController: NSWindowController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func showHistorySettings() {
+        showAsSettings(focusingPermissions: false)
+        settingsView.showHistoryTab()
+    }
+
     func dismissStartupDialogForExternalOpen() {
         guard isStartup else { return }
         isStartup = false

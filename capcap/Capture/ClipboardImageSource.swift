@@ -57,7 +57,7 @@ enum ClipboardImageSource {
         return urls.filter(isImage)
     }
 
-    private static let bitmapPasteboardTypes: [NSPasteboard.PasteboardType] = [
+    static let bitmapPasteboardTypes: [NSPasteboard.PasteboardType] = [
         .png,
         .tiff,
         NSPasteboard.PasteboardType(UTType.jpeg.identifier),

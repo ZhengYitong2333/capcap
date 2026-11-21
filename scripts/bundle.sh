@@ -18,7 +18,8 @@ done
 # Resolve the SDK explicitly for both configurations. An unqualified SDK lookup
 # can retain a stale Command Line Tools path and produce a binary that opts into
 # legacy AppKit controls, even when the selected Xcode has a newer SDK.
-MACOS_SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+SDK_NAME="$(git config --local --get capcap.macosSDK 2>/dev/null || true)"
+MACOS_SDK_PATH="$(xcrun --sdk "${SDK_NAME:-macosx}" --show-sdk-path)"
 if [ ! -d "$MACOS_SDK_PATH" ] || [ ! -f "$MACOS_SDK_PATH/SDKSettings.plist" ]; then
     echo "error: macOS SDK not found at $MACOS_SDK_PATH" >&2
     exit 1
@@ -146,7 +147,8 @@ cp -R "$PERMISSION_FLOW_BUNDLE" "$RESOURCES/"
 # keychain, fall back to ad-hoc signing (still launchable, but TCC grants won't
 # match released builds).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SIGN_IDENTITY="${SIGN_IDENTITY:-capcap Self-Signed}"
+LOCAL_SIGN_IDENTITY="$(git config --local --get capcap.signingIdentity 2>/dev/null || true)"
+SIGN_IDENTITY="${SIGN_IDENTITY:-${LOCAL_SIGN_IDENTITY:-capcap Self-Signed}}"
 sign_bundles() {
     local identity="$1"
     codesign --force --entitlements "$SCRIPT_DIR/capcap-share-extension.entitlements" \
@@ -158,6 +160,9 @@ sign_bundles() {
 if security find-identity -p codesigning 2>/dev/null | grep -qF "$SIGN_IDENTITY"; then
     echo "Signing with: $SIGN_IDENTITY"
     sign_bundles "$SIGN_IDENTITY"
+elif [ -n "$LOCAL_SIGN_IDENTITY" ]; then
+    echo "error: configured signing identity '$SIGN_IDENTITY' is unavailable" >&2
+    exit 1
 else
     echo "warning: '$SIGN_IDENTITY' not found in keychain — falling back to ad-hoc signing." >&2
     echo "warning: TCC permissions won't match released builds until you import capcap-signing.p12." >&2

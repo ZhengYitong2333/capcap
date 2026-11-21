@@ -482,7 +482,6 @@ class EditWindowController {
         if !layout.primary.isEmpty {
             let tv = ToolbarView(items: layout.primary, orientation: .horizontal)
             wireToolbarCallbacks(tv)
-            tv.frame = toolbarRect(in: hostSelectionView.bounds, size: tv.preferredSize)
             styleFloatingHUD(tv)
             self.toolbarView = tv
             hostSelectionView.addSubview(tv)
@@ -491,16 +490,12 @@ class EditWindowController {
         if !layout.side.isEmpty {
             let sv = ToolbarView(items: layout.side, orientation: .vertical)
             wireToolbarCallbacks(sv)
-            sv.frame = sideToolbarRect(
-                in: hostSelectionView.bounds,
-                size: sv.preferredSize,
-                avoiding: toolbarView?.frame
-            )
             styleFloatingHUD(sv)
             self.sideToolbarView = sv
             hostSelectionView.addSubview(sv)
         }
 
+        positionToolbars(in: hostSelectionView.bounds)
         updateCaptureActionAvailability()
     }
 
@@ -1323,19 +1318,7 @@ class EditWindowController {
         // mouse coordinates, feeding a new value back into the layout again.
         guard !isAdjustingBeautifyShadowSize else { return }
         guard let hostSelectionView else { return }
-        if let toolbarView {
-            toolbarView.frame = toolbarRect(
-                in: hostSelectionView.bounds,
-                size: toolbarView.preferredSize
-            )
-        }
-        if let sideToolbarView {
-            sideToolbarView.frame = sideToolbarRect(
-                in: hostSelectionView.bounds,
-                size: sideToolbarView.preferredSize,
-                avoiding: toolbarView?.frame
-            )
-        }
+        positionToolbars(in: hostSelectionView.bounds)
         updateSubToolbarPosition()
         if isBeautifyActive,
            let toolbarFrame = subToolbarAnchorFrame,
@@ -3122,6 +3105,27 @@ class EditWindowController {
         hostSelectionView?.needsDisplay = true
     }
 
+    private func positionToolbars(in bounds: NSRect) {
+        var safeBounds = bounds
+        safeBounds.size.height -= screen.safeAreaInsets.top
+        let available = safeBounds.insetBy(dx: 8, dy: 8)
+        if let bar = toolbarView {
+            let size = bar.scaledSize(fitting: available.size)
+            bar.place(in: toolbarRect(in: bounds, size: size))
+        }
+        if let bar = sideToolbarView {
+            let primary = toolbarView?.frame
+            var size = bar.scaledSize(fitting: available.size)
+            var frame = sideToolbarRect(in: safeBounds, size: size, avoiding: primary)
+            if let primary, primary.intersects(frame) {
+                let freeHeight = max(available.maxY - primary.maxY, primary.minY - available.minY) - 8
+                size = bar.scaledSize(fitting: NSSize(width: available.width, height: freeHeight))
+                frame = sideToolbarRect(in: safeBounds, size: size, avoiding: primary)
+            }
+            bar.place(in: frame)
+        }
+    }
+
     private func toolbarRect(in bounds: NSRect, size: NSSize) -> NSRect {
         EditorToolbarPlacement.primaryToolbarRect(
             referenceRect: outerVisualRect(in: bounds),
@@ -3286,6 +3290,21 @@ class ToolbarView: NSView {
         case .horizontal: return NSSize(width: max(run, thickness), height: thickness)
         case .vertical:   return NSSize(width: thickness, height: max(run, thickness))
         }
+    }
+
+    private let requestedScale = Defaults.toolbarScale
+
+    func scaledSize(fitting available: NSSize) -> NSSize {
+        let logical = preferredSize
+        let scale = min(requestedScale, max(1, available.width) / logical.width,
+                        max(1, available.height) / logical.height)
+        return NSSize(width: logical.width * scale, height: logical.height * scale)
+    }
+
+    func place(in rect: NSRect) {
+        frame = rect
+        // Keep button drawing, hit testing and popover anchors in the same logical coordinates.
+        bounds = NSRect(origin: .zero, size: preferredSize)
     }
 
     var onItemTriggered: ((ToolbarItemID) -> Void)?

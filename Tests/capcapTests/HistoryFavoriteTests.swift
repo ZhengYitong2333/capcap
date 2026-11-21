@@ -163,20 +163,9 @@ final class HistoryFavoriteTests: XCTestCase {
                                                          supportedExtensions: supported))
     }
 
-    func testFavoriteFilterIsSecondAfterAll() {
-        XCTAssertEqual(Array(HistoryPanelFilter.allCases.prefix(2)), [.all, .favorites])
-    }
-
-    func testFavoriteFilterAppearsWhenAtLeastOneEntryIsFavorite() throws {
-        let first = try makeEntry(name: "first.png")
-        let second = try makeEntry(name: "second.png")
-        let entries = [first, second]
-
-        XCTAssertFalse(HistoryFavoritePolicy.shouldShowFilter(for: entries))
-        XCTAssertTrue(HistoryManager.setFavorite(true, on: first.fileURL))
-        XCTAssertTrue(HistoryFavoritePolicy.shouldShowFilter(for: entries))
-        XCTAssertTrue(HistoryManager.setFavorite(true, on: second.fileURL))
-        XCTAssertTrue(HistoryFavoritePolicy.shouldShowFilter(for: entries))
+    func testClipboardTabsRemainVisibleWithEmptyHistory() {
+        XCTAssertEqual(HistoryPanelFilter.persistentTabs, [.all, .text, .screenshots, .files, .favorites])
+        XCTAssertEqual(Array(HistoryPanelFilter.allCases.prefix(5)), [.all, .text, .screenshots, .files, .favorites])
     }
 
     func testMultiSelectionTargetsAllSelectedEntries() throws {

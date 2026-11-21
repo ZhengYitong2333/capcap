@@ -149,7 +149,7 @@ final class HistoryManager {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(limitChanged),
-            name: .historyCacheLimitDidChange,
+            name: .imageCacheCapacityDidChange,
             object: nil
         )
         NotificationCenter.default.addObserver(
@@ -162,12 +162,6 @@ final class HistoryManager {
             self,
             selector: #selector(clipboardTextCacheEnabledChanged),
             name: .clipboardTextCacheEnabledDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(clipboardTextHistoryLimitChanged),
-            name: .clipboardTextHistoryLimitDidChange,
             object: nil
         )
         NotificationCenter.default.addObserver(
@@ -203,18 +197,6 @@ final class HistoryManager {
         queue.async { [weak self] in
             guard let self else { return }
             self.pruneMediaToLimit()
-            self.invalidateEntriesCache()
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
-            }
-        }
-    }
-
-    @objc private func clipboardTextHistoryLimitChanged() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.pruneTextToLimits()
-            self.pruneFileReferencesToLimit()
             self.invalidateEntriesCache()
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
@@ -264,24 +246,37 @@ final class HistoryManager {
     func add(image: NSImage, cloudURL: URL? = nil) {
         guard Defaults.historyCacheEnabled else { return }
         guard let data = image.pngDataPreservingBacking() else { return }
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            guard Defaults.historyCacheEnabled else { return }
-            let name = Self.filenameFormatter.string(from: Date()) + ".png"
-            let url = self.directoryURL.appendingPathComponent(name)
-            do {
-                try data.write(to: url, options: .atomic)
-            } catch {
-                return
-            }
-            if let cloudURL = cloudURL {
-                Self.writeCloudURLXattr(cloudURL, on: url)
-            }
-            self.pruneMediaToLimit()
-            self.invalidateEntriesCache()
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
-            }
+        queue.async {
+            self.storePNG(data, cloudURL: cloudURL)
+        }
+    }
+
+    func addClipboardBitmap(_ bitmap: Data) {
+        queue.async {
+            guard Defaults.historyCacheEnabled,
+                  let image = NSImage.imagePreservingPixelDimensions(from: bitmap),
+                  let data = image.pngDataPreservingBacking() else { return }
+            self.storePNG(data)
+        }
+    }
+
+    private func storePNG(_ data: Data, cloudURL: URL? = nil) {
+        guard Defaults.historyCacheEnabled else { return }
+        let stem = Self.filenameFormatter.string(from: Date())
+        var url = directoryURL.appendingPathComponent(stem + ".png")
+        if FileManager.default.fileExists(atPath: url.path) {
+            url = directoryURL.appendingPathComponent("\(stem)-\(UUID().uuidString).png")
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            return
+        }
+        if let cloudURL { Self.writeCloudURLXattr(cloudURL, on: url) }
+        pruneMediaToLimit()
+        invalidateEntriesCache()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
         }
     }
 
@@ -393,7 +388,6 @@ final class HistoryManager {
                     try? FileManager.default.setAttributes([.modificationDate: copiedAt], ofItemAtPath: manifest.path)
                     for duplicate in duplicates { try? FileManager.default.removeItem(at: duplicate.fileURL) }
                 }
-                self.pruneFileReferencesToLimit()
                 self.invalidateEntriesCache()
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
@@ -667,7 +661,6 @@ final class HistoryManager {
         }
         if Defaults.clipboardTextCacheEnabled {
             removedCount += pruneTextToLimits()
-            removedCount += pruneFileReferencesToLimit()
         }
         return removedCount
     }
@@ -677,22 +670,14 @@ final class HistoryManager {
         guard Defaults.historyCacheEnabled else { return 0 }
         return HistoryRetentionPolicy.pruneMedia(
             in: directoryURL,
-            limit: Defaults.historyCacheLimit
+            imageByteLimit: Defaults.imageCacheCapacity.bytes
         )
     }
 
     @discardableResult
     private func pruneTextToLimits() -> Int {
         guard Defaults.clipboardTextCacheEnabled else { return 0 }
-        return HistoryRetentionPolicy.pruneText(
-            in: directoryURL,
-            limit: Defaults.clipboardTextHistoryLimit
-        )
-    }
-
-    @discardableResult
-    private func pruneFileReferencesToLimit() -> Int {
-        HistoryRetentionPolicy.pruneFileReferences(in: directoryURL, limit: Defaults.clipboardTextHistoryLimit)
+        return HistoryRetentionPolicy.pruneText(in: directoryURL)
     }
 
     private func invalidateEntriesCache() {

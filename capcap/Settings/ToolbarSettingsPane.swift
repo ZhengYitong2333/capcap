@@ -16,6 +16,11 @@ final class ToolbarSettingsPane: NSView {
     /// immediately, so the settings page has no separate apply step.
     private var workingLayout: ToolbarLayout = Defaults.toolbarLayout.normalized()
 
+    private let sizeLabel = ToolbarSettingsPane.sectionTitleLabel()
+    private let sizeControl = NSSegmentedControl(
+        labels: Defaults.toolbarSizePercentages.map { "\($0)%" },
+        trackingMode: .selectOne, target: nil, action: nil
+    )
     private let preview = ToolbarLayoutPreviewView()
     private var previewHeightConstraint: NSLayoutConstraint!
     private var primaryGrid: ToolbarSlotGridView!
@@ -81,6 +86,13 @@ final class ToolbarSettingsPane: NSView {
         stack.spacing = 14
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+
+        sizeControl.target = self
+        sizeControl.action = #selector(sizeChanged)
+        sizeControl.selectedSegment = Defaults.toolbarSizePercentages.firstIndex(of: Defaults.toolbarSizePercent) ?? 1
+        let sizeRow = NSStackView(views: [sizeLabel, sizeControl])
+        sizeRow.spacing = 12
+        stack.addArrangedSubview(sizeRow)
 
         // Preview card.
         let previewCard = Self.makeCard()
@@ -254,6 +266,13 @@ final class ToolbarSettingsPane: NSView {
 
     // MARK: - Actions
 
+    @objc private func sizeChanged() {
+        guard Defaults.toolbarSizePercentages.indices.contains(sizeControl.selectedSegment) else { return }
+        Defaults.toolbarSizePercent = Defaults.toolbarSizePercentages[sizeControl.selectedSegment]
+        preview.scale = Defaults.toolbarScale
+        updatePreviewHeight()
+    }
+
     @objc private func resetTapped() {
         workingLayout = .default
         syncFromWorkingLayout()
@@ -275,6 +294,8 @@ final class ToolbarSettingsPane: NSView {
     }
 
     private func applyLocalizedStrings() {
+        sizeLabel.stringValue = L10n.toolbarSize
+        sizeControl.setAccessibilityLabel(L10n.toolbarSize)
         primaryTitle.stringValue = L10n.toolbarSettingsPrimaryTitle
         primaryHint.stringValue = L10n.toolbarSettingsPrimaryHint
         sideTitle.stringValue = L10n.toolbarSettingsSideTitle
