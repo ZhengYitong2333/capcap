@@ -303,6 +303,7 @@ class EditWindowController {
     private var recentEmojis: [String] = Defaults.recentEmojis
     private var emojiPopover: NSPopover?
     private var beautifyPresetPopover: NSPopover?
+    private var sizeControlPopover: NSPopover?
     private var beautifyToolbarPresetIDs: [String] = Defaults.beautifyToolbarPresetIDs
     /// Last color sampled from the toolbar eyedropper. Persisted locally and
     /// shown as an ink-bottle control for color-capable annotation tools.
@@ -497,6 +498,7 @@ class EditWindowController {
 
         positionToolbars(in: hostSelectionView.bounds)
         updateCaptureActionAvailability()
+        updateSizeControlAvailability()
     }
 
     /// Injects the controller's action callbacks into a toolbar. Both the
@@ -530,6 +532,8 @@ class EditWindowController {
             showInsertImageMenu()
         case .colorPicker:
             runColorPicker()
+        case .sizeControl:
+            showSizeControlPopover()
         case .undo:
             _ = canvasView?.undo()
         case .redo:
@@ -765,6 +769,7 @@ class EditWindowController {
         updateEditorInteractionState()
 
         showSubToolbar(for: tool)
+        updateSizeControlAvailability()
 
         // Restore focus to the overlay window after toolbar interaction so
         // keyboard input no longer falls through to the captured app.
@@ -891,6 +896,7 @@ class EditWindowController {
     private func showSubToolbar(for tool: EditTool) {
         dismissEmojiPopover()
         dismissBeautifyPresetPopover()
+        dismissSizeControlPopover()
         subToolbarView?.removeFromSuperview()
         subToolbarView = nil
         toolbars.forEach { $0.setActive(false, for: .rotate) }
@@ -1122,9 +1128,7 @@ class EditWindowController {
             self?.canvasView?.beginSelectionAdjustment()
         }
         view.onFontSizeChanged = { [weak self] size in
-            self?.currentFontSize = size
-            self?.canvasView?.currentFontSize = size
-            Defaults.lastTextFontSize = Double(size)
+            self?.setCurrentTextFontSize(size)
             self?.canvasView?.mutateSelectedAnnotationLive { $0.withFontSize(size) }
         }
         view.onFontSizeEnded = { [weak self] in
@@ -1267,6 +1271,194 @@ class EditWindowController {
     private func dismissBeautifyPresetPopover() {
         beautifyPresetPopover?.performClose(nil)
         beautifyPresetPopover = nil
+    }
+
+    // MARK: - Size control
+
+    private func supportsSizeControl(_ tool: EditTool) -> Bool {
+        switch tool {
+        case .pen, .line, .arrow, .rectangle, .ellipse, .magnifier, .marker, .numbered, .text, .mosaic:
+            return true
+        case .none, .spotlight, .eraser, .emoji, .scrollCapture:
+            return false
+        }
+    }
+
+    private func updateSizeControlAvailability() {
+        let enabled = supportsSizeControl(activeTool)
+        toolbars.forEach { $0.setEnabled(enabled, for: .sizeControl) }
+        if !enabled {
+            dismissSizeControlPopover()
+        }
+    }
+
+    private func sizeControlConfiguration() -> SizeControlConfiguration? {
+        switch activeTool {
+        case .pen, .line, .arrow, .rectangle, .ellipse, .magnifier:
+            return SizeControlConfiguration(
+                title: L10n.tipSizeControl,
+                detail: nil,
+                minimum: CGFloat(Defaults.editorLineWidthMin),
+                maximum: CGFloat(Defaults.editorLineWidthMax),
+                currentValue: currentLineWidth,
+                presets: [2, 4, 6, 8, 12, 16]
+            )
+        case .marker:
+            return SizeControlConfiguration(
+                title: L10n.tipSizeControl,
+                detail: nil,
+                minimum: CGFloat(Defaults.editorLineWidthMin),
+                maximum: CGFloat(Defaults.markerLineWidthMax),
+                currentValue: currentMarkerLineWidth,
+                presets: [1, 3, 5, 8, 10]
+            )
+        case .numbered:
+            return SizeControlConfiguration(
+                title: L10n.tipSizeControl,
+                detail: nil,
+                minimum: CGFloat(Defaults.numberSizeMin),
+                maximum: CGFloat(Defaults.numberSizeMax),
+                currentValue: currentNumberSize,
+                presets: [1, 3, 5, 8, 12, 16, 20, 25]
+            )
+        case .text:
+            return SizeControlConfiguration(
+                title: L10n.tipSizeControl,
+                detail: nil,
+                minimum: 10,
+                maximum: 100,
+                currentValue: currentFontSize,
+                presets: [10, 12, 16, 20, 24, 32, 48, 64]
+            )
+        case .mosaic:
+            if currentMosaicStyle == .blur {
+                return SizeControlConfiguration(
+                    title: L10n.tipSizeControl,
+                    detail: L10n.mosaicBlurAmount,
+                    minimum: CGFloat(Defaults.mosaicBlurRadiusMin),
+                    maximum: CGFloat(Defaults.mosaicBlurRadiusMax),
+                    currentValue: currentMosaicBlurRadius,
+                    presets: [1, 4, 8, 12, 16, 24, 48]
+                )
+            }
+            return SizeControlConfiguration(
+                title: L10n.tipSizeControl,
+                detail: L10n.mosaicGranularity,
+                minimum: CGFloat(Defaults.mosaicBlockSizeMin),
+                maximum: CGFloat(Defaults.mosaicBlockSizeMax),
+                currentValue: currentMosaicBlockSize,
+                presets: [4, 8, 12, 16, 24, 32, 48]
+            )
+        case .none, .spotlight, .eraser, .emoji, .scrollCapture:
+            return nil
+        }
+    }
+
+    private func showSizeControlPopover() {
+        if let existing = sizeControlPopover {
+            sizeControlPopover = nil
+            if existing.isShown {
+                existing.performClose(nil)
+                return
+            }
+        }
+        guard let hostSelectionView,
+              let configuration = sizeControlConfiguration(),
+              let anchor = sizeControlAnchor(in: hostSelectionView) else { return }
+
+        dismissEmojiPopover()
+        dismissBeautifyPresetPopover()
+
+        let view = SizeControlPopoverView(configuration: configuration)
+        view.onEditingBegan = { [weak self] in
+            self?.canvasView?.beginSelectionAdjustment()
+        }
+        view.onValueChanged = { [weak self] value in
+            self?.applySizeControlValue(value)
+        }
+        view.onEditingEnded = { [weak self] in
+            self?.canvasView?.commitSelectionAdjustment()
+        }
+
+        let viewController = NSViewController()
+        viewController.view = view
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = SizeControlPopoverView.preferredSize
+        popover.contentViewController = viewController
+        popover.show(relativeTo: anchor.rect, of: anchor.view, preferredEdge: anchor.edge)
+        sizeControlPopover = popover
+    }
+
+    private func dismissSizeControlPopover() {
+        sizeControlPopover?.performClose(nil)
+        sizeControlPopover = nil
+    }
+
+    /// Anchor rect in the host view's coordinates plus the edge the popover
+    /// should grow toward. Returns nil when the button is hidden from every
+    /// toolbar (the shortcut still no-ops rather than guessing a position).
+    private func sizeControlAnchor(in host: NSView) -> (rect: NSRect, view: NSView, edge: NSRectEdge)? {
+        let candidates = [toolbarView, sideToolbarView].compactMap { $0 }
+        for toolbar in candidates {
+            guard let buttonRect = toolbar.frame(for: .sizeControl) else { continue }
+            let rectInHost = toolbar.convert(buttonRect, to: host)
+            let edge: NSRectEdge = toolbar.orientation == .horizontal
+                ? .maxY
+                : (rectInHost.midX >= host.bounds.midX ? .maxX : .minX)
+            return (rectInHost, host, edge)
+        }
+        return nil
+    }
+
+    private func applySizeControlValue(_ value: CGFloat) {
+        switch activeTool {
+        case .pen, .line, .arrow, .rectangle, .ellipse, .magnifier:
+            setCurrentDrawingLineWidth(value)
+            canvasView?.mutateSelectedAnnotationLive { $0.withLineWidth(value) }
+        case .marker:
+            setCurrentMarkerLineWidth(value)
+            canvasView?.mutateSelectedAnnotationLive { $0.withLineWidth(value) }
+        case .numbered:
+            setCurrentNumberSize(value)
+            canvasView?.mutateSelectedAnnotationLive { $0.withLineWidth(value) }
+        case .text:
+            setCurrentTextFontSize(value)
+            canvasView?.mutateSelectedAnnotationLive { $0.withFontSize(value) }
+        case .mosaic:
+            setCurrentMosaicSize(value)
+            canvasView?.mutateSelectedMosaicLive(
+                style: currentMosaicStyle,
+                blockSize: currentMosaicBlockSize,
+                blurRadius: currentMosaicBlurRadius
+            )
+        case .none, .spotlight, .eraser, .emoji, .scrollCapture:
+            break
+        }
+    }
+
+    private func setCurrentTextFontSize(_ size: CGFloat) {
+        currentFontSize = size
+        canvasView?.currentFontSize = size
+        Defaults.lastTextFontSize = Double(size)
+    }
+
+    private func setCurrentMosaicSize(_ size: CGFloat) {
+        switch currentMosaicStyle {
+        case .pixelate:
+            let clamped = min(max(size, CGFloat(Defaults.mosaicBlockSizeMin)),
+                              CGFloat(Defaults.mosaicBlockSizeMax))
+            currentMosaicBlockSize = clamped
+            canvasView?.currentMosaicBlockSize = clamped
+            Defaults.mosaicBlockSize = Double(clamped)
+        case .blur:
+            let clamped = min(max(size, CGFloat(Defaults.mosaicBlurRadiusMin)),
+                              CGFloat(Defaults.mosaicBlurRadiusMax))
+            currentMosaicBlurRadius = clamped
+            canvasView?.currentMosaicBlurRadius = clamped
+            Defaults.mosaicBlurRadius = Double(clamped)
+        }
     }
 
     private func promoteRecentEmoji(_ emoji: String) {
@@ -2791,7 +2983,7 @@ class EditWindowController {
         case .toolbar(let item):
             // Holding a tool key selects it once rather than repeatedly
             // toggling it as macOS generates key-repeat events.
-            if event.isARepeat, item.editTool != nil { return true }
+            if event.isARepeat, item.editTool != nil || item == .sizeControl { return true }
             return performToolbarItem(item, togglesSelectedTool: true)
         }
         return true
@@ -2875,6 +3067,7 @@ class EditWindowController {
         sideToolbarView = nil
         dismissEmojiPopover()
         dismissBeautifyPresetPopover()
+        dismissSizeControlPopover()
         subToolbarView?.removeFromSuperview()
         subToolbarView = nil
         beautifySubToolbarView?.removeFromSuperview()

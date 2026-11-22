@@ -267,6 +267,7 @@
 "tipMoreBeautifyPresets" = "Больше пресетов оформления";
 "tipInsertImage" = "Вставить изображение";
 "tipColorPicker" = "Пипетка";
+"tipSizeControl" = "Размер";
 "tipPickedInkBottle" = "Взять цвет пипеткой в чернильницу";
 "tipUndo" = "Отменить";
 "tipRedo" = "Повторить";
@@ -758,3 +759,11 @@
 "historyRecordingSettings" = "Включить запись в настройках";
 "imageCacheSizeLabel" = "Лимит размера кэша изображений";
 "historyCardSizeAction" = "Изменить размер карточек · сейчас %d%%";
+"historyHoverPreviewLabel" = "Предпросмотр при наведении на карточки истории";
+"historyHoverPreviewHint" = "Показывает увеличенный предпросмотр после задержки указателя на поддерживаемой карточке";
+"historyHoverPreviewDelayLabel" = "Задержка появления";
+"historyHoverPreviewDelayHint" = "Сколько указатель должен оставаться на карточке до появления предпросмотра";
+"historyHoverPreviewSizeLabel" = "Размер предпросмотра";
+"historyHoverPreviewSizeHint" = "Масштаб предпросмотра в процентах от максимального размера по умолчанию";
+"historyHoverPreviewDelayValue" = "%.1f с";
+"historyHoverPreviewSizeValue" = "%d%%";

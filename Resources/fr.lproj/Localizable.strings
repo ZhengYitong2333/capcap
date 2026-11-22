@@ -267,6 +267,7 @@
 "tipMoreBeautifyPresets" = "Plus de styles d’embellissement";
 "tipInsertImage" = "Insérer une image";
 "tipColorPicker" = "Pipette";
+"tipSizeControl" = "Taille";
 "tipPickedInkBottle" = "Utiliser la pipette pour remplir l’encrier";
 "tipUndo" = "Annuler";
 "tipRedo" = "Rétablir";
@@ -758,3 +759,11 @@
 "historyRecordingSettings" = "Activer l’enregistrement dans les réglages";
 "imageCacheSizeLabel" = "Taille maximale du cache des images";
 "historyCardSizeAction" = "Changer la taille des cartes · taille actuelle %d%%";
+"historyHoverPreviewLabel" = "Aperçu au survol des cartes d’historique";
+"historyHoverPreviewHint" = "Affiche un aperçu agrandi après avoir laissé le pointeur sur une carte compatible";
+"historyHoverPreviewDelayLabel" = "Délai d’affichage";
+"historyHoverPreviewDelayHint" = "Durée pendant laquelle le pointeur doit rester avant l’apparition de l’aperçu";
+"historyHoverPreviewSizeLabel" = "Taille de l’aperçu";
+"historyHoverPreviewSizeHint" = "Échelle de l’aperçu en pourcentage de la taille maximale par défaut";
+"historyHoverPreviewDelayValue" = "%.1f s";
+"historyHoverPreviewSizeValue" = "%d%%";

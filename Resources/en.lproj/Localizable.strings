@@ -267,6 +267,7 @@
 "tipMoreBeautifyPresets" = "More Beautify Presets";
 "tipInsertImage" = "Insert Image";
 "tipColorPicker" = "Color Picker";
+"tipSizeControl" = "Size";
 "tipPickedInkBottle" = "Use the color picker to fill the ink bottle";
 "tipUndo" = "Undo";
 "tipRedo" = "Redo";
@@ -758,3 +759,11 @@
 "historyRecordingSettings" = "Open settings to enable recording";
 "imageCacheSizeLabel" = "Image cache size limit";
 "historyCardSizeAction" = "Change card size · current size %d%%";
+"historyHoverPreviewLabel" = "Hover preview";
+"historyHoverPreviewHint" = "Show an enlarged preview after resting the pointer on a supported card";
+"historyHoverPreviewDelayLabel" = "Show delay";
+"historyHoverPreviewDelayHint" = "How long the pointer must rest before the preview appears";
+"historyHoverPreviewSizeLabel" = "Preview size";
+"historyHoverPreviewSizeHint" = "Preview scale as a percentage of the default maximum";
+"historyHoverPreviewDelayValue" = "%.1f s";
+"historyHoverPreviewSizeValue" = "%d%%";

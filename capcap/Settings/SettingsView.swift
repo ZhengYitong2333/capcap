@@ -279,6 +279,8 @@ class SettingsView: NSView {
     private var historyPanelDialogModeHintLabel: NSTextField?
     private var historyPanelNotchModeTitleLabel: NSTextField!
     private var historyPanelNotchModeHintLabel: NSTextField?
+    private var historyHoverPreviewDelayValueLabel: NSTextField!
+    private var historyHoverPreviewSizeValueLabel: NSTextField!
     private var permHeaderSubtitleLabel: NSTextField?
     private var accessibilityNameLabel: NSTextField!
     private var accessibilityDescLabel: NSTextField!
@@ -1396,7 +1398,7 @@ class SettingsView: NSView {
         historyCard.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
         buildHistoryPanelModeCard(into: stack)
-
+        buildHistoryHoverPreviewCard(into: stack)
     }
 
     private func buildCountdownCard(into stack: NSStackView) {
@@ -1534,6 +1536,108 @@ class SettingsView: NSView {
 
         stack.addArrangedSubview(card)
         card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    }
+
+    private func buildHistoryHoverPreviewCard(into stack: NSStackView) {
+        let card = CardView()
+        let inner = NSStackView()
+        inner.orientation = .vertical
+        inner.alignment = .leading
+        inner.spacing = 10
+        inner.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(inner)
+        pin(inner, to: card, insets: NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
+
+        let title = primaryLabel(L10n.historyHoverPreviewLabel)
+        let hint = secondaryLabel(L10n.historyHoverPreviewHint, wrapping: true)
+        inner.addArrangedSubview(title)
+        inner.addArrangedSubview(hint)
+        hint.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+
+        let divider = rowDivider()
+        inner.addArrangedSubview(divider)
+        divider.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+
+        historyHoverPreviewDelayValueLabel = addHistoryHoverPreviewSlider(
+            to: inner,
+            title: L10n.historyHoverPreviewDelayLabel,
+            hint: L10n.historyHoverPreviewDelayHint,
+            value: Defaults.historyHoverPreviewDelay,
+            minValue: Defaults.historyHoverPreviewDelayRange.lowerBound,
+            maxValue: Defaults.historyHoverPreviewDelayRange.upperBound,
+            stepValue: 0.5,
+            numberOfTickMarks: 10,
+            valueText: L10n.historyHoverPreviewDelayValue(Defaults.historyHoverPreviewDelay),
+            action: #selector(historyHoverPreviewDelayChanged(_:))
+        )
+
+        let sizeDivider = rowDivider()
+        inner.addArrangedSubview(sizeDivider)
+        sizeDivider.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+
+        historyHoverPreviewSizeValueLabel = addHistoryHoverPreviewSlider(
+            to: inner,
+            title: L10n.historyHoverPreviewSizeLabel,
+            hint: L10n.historyHoverPreviewSizeHint,
+            value: Double(Defaults.historyHoverPreviewSizePercent),
+            minValue: Double(Defaults.historyHoverPreviewSizeRange.lowerBound),
+            maxValue: Double(Defaults.historyHoverPreviewSizeRange.upperBound),
+            stepValue: 10,
+            numberOfTickMarks: 6,
+            valueText: L10n.historyHoverPreviewSizeValue(Defaults.historyHoverPreviewSizePercent),
+            action: #selector(historyHoverPreviewSizeChanged(_:))
+        )
+
+        stack.addArrangedSubview(card)
+        card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    }
+
+    @discardableResult
+    private func addHistoryHoverPreviewSlider(
+        to inner: NSStackView,
+        title: String,
+        hint: String,
+        value: Double,
+        minValue: Double,
+        maxValue: Double,
+        stepValue: Double,
+        numberOfTickMarks: Int,
+        valueText: String,
+        action: Selector
+    ) -> NSTextField {
+        let header = NSStackView()
+        header.orientation = .horizontal
+        header.alignment = .firstBaseline
+        header.spacing = 8
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.addArrangedSubview(primaryLabel(title))
+        header.addArrangedSubview(flexSpacer())
+
+        let valueLabel = NSTextField(labelWithString: valueText)
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        valueLabel.textColor = NSColor.white.withAlphaComponent(0.88)
+        header.addArrangedSubview(valueLabel)
+
+        inner.addArrangedSubview(header)
+        header.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+
+        let slider = SettingsTickSlider(
+            value: value,
+            minValue: minValue,
+            maxValue: maxValue,
+            stepValue: stepValue,
+            numberOfTickMarks: numberOfTickMarks,
+            target: self,
+            action: action
+        )
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        inner.addArrangedSubview(slider)
+        slider.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+
+        let hintLabel = secondaryLabel(hint, wrapping: true)
+        inner.addArrangedSubview(hintLabel)
+        hintLabel.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+        return valueLabel
     }
 
     private func buildScreenshotQualityCard(into stack: NSStackView) {
@@ -3158,6 +3262,18 @@ class SettingsView: NSView {
         let value = Int(sender.doubleValue.rounded())
         Defaults.countdownSeconds = value
         countdownValueLabel?.stringValue = "\(Defaults.countdownSeconds)\(L10n.countdownSecondsSuffix)"
+    }
+
+    @objc private func historyHoverPreviewDelayChanged(_ sender: SettingsTickSlider) {
+        Defaults.historyHoverPreviewDelay = sender.doubleValue
+        historyHoverPreviewDelayValueLabel?.stringValue =
+            L10n.historyHoverPreviewDelayValue(Defaults.historyHoverPreviewDelay)
+    }
+
+    @objc private func historyHoverPreviewSizeChanged(_ sender: SettingsTickSlider) {
+        Defaults.historyHoverPreviewSizePercent = Int(sender.doubleValue.rounded())
+        historyHoverPreviewSizeValueLabel?.stringValue =
+            L10n.historyHoverPreviewSizeValue(Defaults.historyHoverPreviewSizePercent)
     }
 
     @objc private func windowShadowToggled(_ sender: NSSwitch) {

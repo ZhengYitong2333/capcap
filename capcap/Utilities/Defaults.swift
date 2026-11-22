@@ -129,6 +129,18 @@ enum L10n {
     static var countdownLabel: String { s("countdownLabel") }
     static var countdownHint: String { s("countdownHint") }
     static var countdownSecondsSuffix: String { s("countdownSecondsSuffix") }
+    static var historyHoverPreviewLabel: String { s("historyHoverPreviewLabel") }
+    static var historyHoverPreviewHint: String { s("historyHoverPreviewHint") }
+    static var historyHoverPreviewDelayLabel: String { s("historyHoverPreviewDelayLabel") }
+    static var historyHoverPreviewDelayHint: String { s("historyHoverPreviewDelayHint") }
+    static var historyHoverPreviewSizeLabel: String { s("historyHoverPreviewSizeLabel") }
+    static var historyHoverPreviewSizeHint: String { s("historyHoverPreviewSizeHint") }
+    static func historyHoverPreviewDelayValue(_ seconds: Double) -> String {
+        String(format: s("historyHoverPreviewDelayValue"), seconds)
+    }
+    static func historyHoverPreviewSizeValue(_ percent: Int) -> String {
+        String(format: s("historyHoverPreviewSizeValue"), percent)
+    }
     static var windowShadowToggleLabel: String { s("windowShadowToggleLabel") }
     static var windowShadowToggleHint: String { s("windowShadowToggleHint") }
     static var shadowSizeLabel: String { s("shadowSizeLabel") }
@@ -478,6 +490,7 @@ enum L10n {
     static var tipMoreBeautifyPresets: String { s("tipMoreBeautifyPresets") }
     static var tipInsertImage: String { s("tipInsertImage") }
     static var tipColorPicker: String { s("tipColorPicker") }
+    static var tipSizeControl: String { s("tipSizeControl") }
     static var tipPickedInkBottle: String { s("tipPickedInkBottle") }
     static var tipUndo: String { s("tipUndo") }
     static var tipRedo: String { s("tipRedo") }
@@ -2404,6 +2417,38 @@ struct Defaults {
             guard historyCardSizePercent != value else { return }
             defaults.set(value, forKey: "historyCardSize")
             NotificationCenter.default.post(name: .historyCardSizeDidChange, object: nil)
+        }
+    }
+
+    static let historyHoverPreviewDelayRange: ClosedRange<Double> = 0.5...5
+
+    /// Seconds the pointer must rest on a history card before its preview appears.
+    static var historyHoverPreviewDelay: Double {
+        get {
+            guard defaults.object(forKey: "historyHoverPreviewDelay") != nil else { return 2 }
+            let saved = defaults.double(forKey: "historyHoverPreviewDelay")
+            guard saved.isFinite else { return 2 }
+            return min(max(saved, historyHoverPreviewDelayRange.lowerBound), historyHoverPreviewDelayRange.upperBound)
+        }
+        set {
+            let value = newValue.isFinite
+                ? min(max(newValue, historyHoverPreviewDelayRange.lowerBound), historyHoverPreviewDelayRange.upperBound)
+                : 2
+            defaults.set(value, forKey: "historyHoverPreviewDelay")
+        }
+    }
+
+    static let historyHoverPreviewSizeRange = 50...100
+
+    /// Maximum hover preview size as a percentage of the default maximum.
+    static var historyHoverPreviewSizePercent: Int {
+        get {
+            let saved = defaults.integer(forKey: "historyHoverPreviewSize")
+            return historyHoverPreviewSizeRange.contains(saved) ? saved : 100
+        }
+        set {
+            let value = min(max(newValue, historyHoverPreviewSizeRange.lowerBound), historyHoverPreviewSizeRange.upperBound)
+            defaults.set(value, forKey: "historyHoverPreviewSize")
         }
     }
 

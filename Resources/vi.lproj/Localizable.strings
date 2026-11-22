@@ -267,6 +267,7 @@
 "tipMoreBeautifyPresets" = "Thêm mẫu làm đẹp";
 "tipInsertImage" = "Chèn ảnh";
 "tipColorPicker" = "Chọn màu";
+"tipSizeControl" = "Kích thước";
 "tipPickedInkBottle" = "Dùng công cụ chọn màu để đổ màu vào lọ mực";
 "tipUndo" = "Hoàn tác";
 "tipRedo" = "Làm lại";
@@ -758,3 +759,11 @@
 "historyRecordingSettings" = "Mở cài đặt để bật ghi lịch sử";
 "imageCacheSizeLabel" = "Giới hạn dung lượng bộ nhớ đệm ảnh";
 "historyCardSizeAction" = "Đổi kích thước thẻ · hiện tại %d%%";
+"historyHoverPreviewLabel" = "Xem trước khi rê chuột trên thẻ lịch sử";
+"historyHoverPreviewHint" = "Hiển thị bản xem trước phóng to sau khi giữ con trỏ trên thẻ được hỗ trợ";
+"historyHoverPreviewDelayLabel" = "Độ trễ hiển thị";
+"historyHoverPreviewDelayHint" = "Thời gian giữ con trỏ trước khi bản xem trước xuất hiện";
+"historyHoverPreviewSizeLabel" = "Kích thước xem trước";
+"historyHoverPreviewSizeHint" = "Tỷ lệ bản xem trước so với kích thước tối đa mặc định";
+"historyHoverPreviewDelayValue" = "%.1f giây";
+"historyHoverPreviewSizeValue" = "%d%%";

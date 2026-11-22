@@ -267,6 +267,7 @@
 "tipMoreBeautifyPresets" = "更多美化配色";
 "tipInsertImage" = "插入圖片";
 "tipColorPicker" = "取色器";
+"tipSizeControl" = "大小";
 "tipPickedInkBottle" = "使用取色器提取顏色到墨水瓶";
 "tipUndo" = "復原";
 "tipRedo" = "重做";
@@ -758,3 +759,11 @@
 "historyRecordingSettings" = "前往設定開啟記錄";
 "imageCacheSizeLabel" = "圖片快取空間上限";
 "historyCardSizeAction" = "切換卡片大小（目前 %d%%）";
+"historyHoverPreviewLabel" = "懸停預覽";
+"historyHoverPreviewHint" = "滑鼠在支援的卡片上停留後顯示放大預覽";
+"historyHoverPreviewDelayLabel" = "顯示延遲";
+"historyHoverPreviewDelayHint" = "滑鼠停留多久後顯示預覽";
+"historyHoverPreviewSizeLabel" = "預覽大小";
+"historyHoverPreviewSizeHint" = "預覽大小占預設最大尺寸的百分比";
+"historyHoverPreviewDelayValue" = "%.1f 秒";
+"historyHoverPreviewSizeValue" = "%d%%";

@@ -1360,6 +1360,9 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private var previewController: HistoryPreviewWindowController?
     private var filePreviewController: HistoryFileQuickLookWindowController?
     private weak var activeHoverTile: HistoryPanelTileView?
+    private let hoverPreviewController = HistoryHoverPreviewController()
+    private var hoverPreviewWorkItem: DispatchWorkItem?
+    private var hoverPreviewGeneration = 0
     private var keyboardEntryID: String?
     private var keyboardMouseOrigin: NSPoint?
     private var allEntries: [HistoryEntry] = []
@@ -1424,6 +1427,12 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             name: .languageDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(hoverPreviewScreenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
         warmInitialPreviewWindow()
     }
 
@@ -1441,6 +1450,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         stopSearchMouseMovementTracking()
         searchApplyWorkItem?.cancel()
         hoverSyncWorkItem?.cancel()
+        hoverPreviewWorkItem?.cancel()
+        hoverPreviewController.close()
         previewPrefetchRequests.values.forEach { $0.cancel() }
         previewController?.close()
         HotkeyManager.shared.unregisterHistoryPreview()
@@ -2614,14 +2625,19 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             }
             let hoverChanged = activeHoverTile !== tile
             if hoverChanged {
+                cancelHoverPreview()
                 activeHoverTile?.setHovered(false)
                 activeHoverTile = tile
             }
             tile.setHovered(true)
             if hoverChanged {
                 updateHistoryPreviewHotkey()
+                if !fromKeyboard {
+                    scheduleHoverPreview(for: tile)
+                }
             }
         } else if activeHoverTile === tile {
+            cancelHoverPreview()
             tile.setHovered(false)
             activeHoverTile = nil
             updateHistoryPreviewHotkey()
@@ -2631,10 +2647,59 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private func clearActiveHoverTile() {
+        cancelHoverPreview()
         guard let hoveredTile = activeHoverTile else { return }
         hoveredTile.setHovered(false)
         activeHoverTile = nil
         updateHistoryPreviewHotkey()
+    }
+
+    private func scheduleHoverPreview(for tile: HistoryPanelTileView) {
+        guard isActive,
+              !isSearchInputActive,
+              !isShowingShortcutGuide,
+              !isScrollingContent,
+              NSEvent.pressedMouseButtons == 0,
+              previewController == nil,
+              !HistoryFileQuickLookWindowController.isPresented,
+              HistoryHoverPreviewEligibility.content(for: tile.entry) != nil,
+              tile.previewAnchorRectInScreen != nil else { return }
+
+        let generation = hoverPreviewGeneration
+        let workItem = DispatchWorkItem { [weak self, weak tile] in
+            guard let self, let tile, generation == self.hoverPreviewGeneration else { return }
+            self.presentHoverPreview(for: tile)
+        }
+        hoverPreviewWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Defaults.historyHoverPreviewDelay,
+            execute: workItem
+        )
+    }
+
+    private func presentHoverPreview(for tile: HistoryPanelTileView) {
+        guard isActive,
+              activeHoverTile === tile,
+              !isSearchInputActive,
+              !isShowingShortcutGuide,
+              !isScrollingContent,
+              previewController == nil,
+              !HistoryFileQuickLookWindowController.isPresented,
+              let content = HistoryHoverPreviewEligibility.content(for: tile.entry),
+              let anchor = tile.previewAnchorRectInScreen,
+              let window else { return }
+        hoverPreviewController.show(content: content, anchor: anchor, parent: window)
+    }
+
+    private func cancelHoverPreview() {
+        hoverPreviewGeneration += 1
+        hoverPreviewWorkItem?.cancel()
+        hoverPreviewWorkItem = nil
+        hoverPreviewController.hide()
+    }
+
+    @objc private func hoverPreviewScreenParametersChanged() {
+        cancelHoverPreview()
     }
 
     private func updateHistoryPreviewHotkey() {
@@ -2683,6 +2748,9 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         ) { [weak self] event in
             guard let self else { return event }
             guard event.window === self.window else { return event }
+            if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                self.cancelHoverPreview()
+            }
             guard event.type == .keyDown else {
                 if self.keyboardEntryID != nil {
                     self.clearKeyboardNavigation()
@@ -2779,6 +2847,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private func presentPreview(startingAt entry: HistoryEntry) {
+        cancelHoverPreview()
         guard let kind = previewKind(for: entry) else { return }
         if case .files = entry.kind {
             presentFilePreview(startingAt: entry)
@@ -2809,6 +2878,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private func presentFilePreview(startingAt entry: HistoryEntry) {
+        cancelHoverPreview()
         guard case .files(let files) = entry.kind else { return }
         // Browse the complete filtered results, including unrendered pages,
         // independently of the multi-selection used for copy/delete actions.
@@ -4743,6 +4813,14 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
             width: bounds.width - padding * 2,
             height: 18
         )
+    }
+
+    /// Screen-space rect of the card's preview image, used to place the hover
+    /// preview beside the card without covering the pointer.
+    var previewAnchorRectInScreen: NSRect? {
+        guard let window, imageView.bounds.width > 1 else { return nil }
+        let rectInWindow = imageView.convert(imageView.bounds, to: nil)
+        return window.convertToScreen(rectInWindow)
     }
 
     override func updateTrackingAreas() {

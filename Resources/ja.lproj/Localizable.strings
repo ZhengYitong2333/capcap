@@ -267,6 +267,7 @@
 "tipMoreBeautifyPresets" = "美化プリセットを追加";
 "tipInsertImage" = "画像を挿入";
 "tipColorPicker" = "カラーピッカー";
+"tipSizeControl" = "サイズ";
 "tipPickedInkBottle" = "カラーピッカーでインク瓶に色を抽出";
 "tipUndo" = "取り消す";
 "tipRedo" = "やり直す";
@@ -758,3 +759,11 @@
 "historyRecordingSettings" = "設定で履歴の記録を有効にする";
 "imageCacheSizeLabel" = "画像キャッシュの容量上限";
 "historyCardSizeAction" = "カードサイズを切り替え · 現在 %d%%";
+"historyHoverPreviewLabel" = "履歴カードのホバープレビュー";
+"historyHoverPreviewHint" = "対応するカードにポインタを置くと拡大プレビューを表示します";
+"historyHoverPreviewDelayLabel" = "表示遅延";
+"historyHoverPreviewDelayHint" = "プレビューが表示されるまでのポインタ停止時間";
+"historyHoverPreviewSizeLabel" = "プレビューサイズ";
+"historyHoverPreviewSizeHint" = "既定の最大サイズに対するプレビューの割合";
+"historyHoverPreviewDelayValue" = "%.1f 秒";
+"historyHoverPreviewSizeValue" = "%d%%";
