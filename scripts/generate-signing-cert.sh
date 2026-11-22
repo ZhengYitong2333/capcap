@@ -60,11 +60,20 @@ openssl req -x509 -newkey rsa:2048 -sha256 \
 
 P12="$OUT_DIR/capcap-signing.p12"
 echo "==> bundling into $P12"
-# -legacy: macOS `security import` chokes on OpenSSL 3's default PKCS#12 cipher.
-openssl pkcs12 -export -legacy \
-    -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
-    -name "$CERT_NAME" -out "$P12" \
-    -passout "pass:$CERT_PASSWORD"
+# macOS `security import` chokes on OpenSSL 3's default PKCS#12 cipher, so use
+# -legacy when the local OpenSSL supports it. LibreSSL (the macOS default)
+# already produces a compatible bundle and rejects -legacy.
+if openssl pkcs12 -help 2>&1 | grep -q -- "-legacy"; then
+    openssl pkcs12 -export -legacy \
+        -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
+        -name "$CERT_NAME" -out "$P12" \
+        -passout "pass:$CERT_PASSWORD"
+else
+    openssl pkcs12 -export \
+        -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
+        -name "$CERT_NAME" -out "$P12" \
+        -passout "pass:$CERT_PASSWORD"
+fi
 
 B64="$OUT_DIR/capcap-signing.p12.base64"
 base64 -i "$P12" -o "$B64"

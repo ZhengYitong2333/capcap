@@ -15,6 +15,14 @@ confirms the process started. Run it once after the final edit in a related set
 of changes, and rerun it if code or resources change afterward. Documentation-only
 changes do not require an app restart.
 
+Local builds sign with the shared self-signed identity `capcap Self-Signed`
+(see `scripts/signing/README.md`). On a new machine, import
+`capcap-signing.p12` into the login keychain and run
+`git config --local capcap.signingIdentity "capcap Self-Signed"` before the
+first build. Without that identity, `scripts/bundle.sh` falls back to ad-hoc
+signing, and macOS TCC asks for Screen Recording / Accessibility again after
+every rebuild. CI releases read the same certificate from repository secrets.
+
 Do not run `scripts/compile-check.sh`, `swift test`, other test commands, or
 interactive UI checks unless the user explicitly requests testing or UI
 verification. Launching the app confirms startup only; do not claim that the
