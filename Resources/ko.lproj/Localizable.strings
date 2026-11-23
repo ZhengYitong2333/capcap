@@ -772,3 +772,5 @@
 "historyPanelTransparencyHint" = "상단 막대, 기록 패널, 설정 배경에 적용하며 텍스트와 이미지는 선명하게 유지";
 "historyResetTransparency" = "기본 투명도로 복원";
 "historyTransparencySystemOverride" = "시스템 설정에서 투명도 줄이기가 켜져 있음";
+"screenshotSaving" = "스크린샷 저장 중";
+"historyCopyFailed" = "이 항목을 복사할 수 없음";

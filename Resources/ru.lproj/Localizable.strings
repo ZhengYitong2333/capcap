@@ -772,3 +772,5 @@
 "historyPanelTransparencyHint" = "Прозрачность фона верхней полосы, истории и настроек без изменения текста и изображений";
 "historyResetTransparency" = "Восстановить прозрачность по умолчанию";
 "historyTransparencySystemOverride" = "В системных настройках включено уменьшение прозрачности";
+"screenshotSaving" = "Сохранение снимка экрана";
+"historyCopyFailed" = "Не удалось скопировать этот объект";

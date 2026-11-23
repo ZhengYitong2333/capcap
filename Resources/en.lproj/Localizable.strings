@@ -772,3 +772,5 @@
 "historyPanelTransparencyHint" = "Applies to the top strip, history panel and settings background, keeping text and images clear";
 "historyResetTransparency" = "Restore default transparency";
 "historyTransparencySystemOverride" = "Reduce transparency is enabled in system settings";
+"screenshotSaving" = "Saving screenshot";
+"historyCopyFailed" = "Could not copy this item";
