@@ -1527,9 +1527,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private var hasLoadedEntries = false
     private var needsEntriesReload = true
     private var isConfirmingDelete = false
-    private var previewWarmGeneration = 0
     private var previewPrefetchRequests: [String: HistoryImagePreviewRequest] = [:]
-    private var previewPrefetchEntryIDs: Set<String> = []
     private var lastScrollOriginX: CGFloat = 0
     private var hoverSyncWorkItem: DispatchWorkItem?
     private var isScrollingContent = false
@@ -1588,7 +1586,6 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
-        warmInitialPreviewWindow()
     }
 
     required init?(coder: NSCoder) {
@@ -1871,6 +1868,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         if !active { rememberBrowsePosition() }
         filterDwell.cancel()
         isActive = active
+        previewLoadGate.reset()
         if active {
             if needsEntriesReload || !hasLoadedEntries {
                 reloadEntries()
@@ -1878,6 +1876,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
                 updatePreviewLoading(initial: true)
             }
         } else {
+            previewPrefetchRequests.values.forEach { $0.cancel() }
+            previewPrefetchRequests.removeAll()
             setSizeSliderExpanded(false)
             clearKeyboardNavigation()
             endSearchMode(animated: false)
@@ -1904,8 +1904,6 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         needsEntriesReload = true
         if isActive {
             reloadEntries()
-        } else {
-            warmInitialPreviewWindow()
         }
     }
 
@@ -3173,7 +3171,6 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         }
         rememberBrowsePosition()
         loadNextPageIfNeeded()
-        visibleCollectionTiles.forEach { $0.loadPreviewIfNeeded() }
         updatePreviewLoading(direction: direction)
     }
 
@@ -3243,28 +3240,17 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         }
     }
 
-    private func warmInitialPreviewWindow() {
-        previewWarmGeneration += 1
-        let generation = previewWarmGeneration
-        let filter = selectedFilter
-        entriesQueue.async { [weak self] in
-            let entries = Self.filteredEntries(from: HistoryManager.shared.panelEntries(), filter: filter)
-            let initialEntries = Array(entries.prefix(Self.initialPreviewCount))
-            DispatchQueue.main.async {
-                guard let self, self.previewWarmGeneration == generation else { return }
-                self.prefetchPreviews(for: initialEntries)
-            }
-        }
-    }
-
     private func updatePreviewLoading(
         initial: Bool = false,
         direction: PreviewPrefetchDirection = .forward
     ) {
-        guard isActive, !visibleEntries.isEmpty else { return }
-        if initial {
-            visibleCollectionTiles.forEach { $0.loadPreviewIfNeeded() }
-        }
+        guard isActive, !visibleEntries.isEmpty, !isRestoringBrowsePosition else { return }
+        let range = visibleIndexRange()
+        let signature = HistoryPreviewSchedule(range: range, forward: direction == .forward,
+            pixelSize: presentation.previewPixelSize(on: window?.screen), generation: entriesGeneration)
+        let loading = previewLoadGate.update(signature, force: initial)
+        if loading.visible { visibleCollectionTiles.forEach { $0.loadPreviewIfNeeded() } }
+        guard loading.prefetch else { return }
 
         let entriesToPrefetch: [HistoryEntry]
         if initial {
@@ -3317,7 +3303,6 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         for entryID in staleEntryIDs {
             previewPrefetchRequests.removeValue(forKey: entryID)?.cancel()
         }
-        previewPrefetchEntryIDs = entryIDs
 
         let pixelSize = presentation.previewPixelSize(on: window?.screen)
         for entry in entries {
