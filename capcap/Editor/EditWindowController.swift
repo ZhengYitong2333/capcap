@@ -153,6 +153,10 @@ class EditWindowController {
     private var selectionChromeOverlay: SelectionChromeOverlay?
     private weak var hostSelectionView: SelectionView?
     private var toolbarSizeObserver: NSObjectProtocol?
+    private(set) var saveState = EditorSaveState()
+    private var savingInputShield: NSView?
+    private var savingKeyMonitor: Any?
+    private var savingFeedback: ToastWindow.Context?
     private var toolbarView: ToolbarView?
     /// Optional vertical toolbar on the left/right of the selection. Created
     /// only when the user has assigned tools to it in settings.
@@ -359,6 +363,8 @@ class EditWindowController {
     }
 
     deinit {
+        if let savingKeyMonitor { NSEvent.removeMonitor(savingKeyMonitor) }
+        if let savingFeedback { ToastWindow.dismiss(operationID: savingFeedback.operationID) }
         if let toolbarSizeObserver {
             NotificationCenter.default.removeObserver(toolbarSizeObserver)
         }
@@ -529,6 +535,10 @@ class EditWindowController {
         _ item: ToolbarItemID,
         togglesSelectedTool: Bool
     ) -> Bool {
+        if saveState.isSaving {
+            if item == .close { close() }
+            return true
+        }
         if isWaitingForWindowCaptureOutput {
             if item == .close { close() }
             return true
@@ -2177,6 +2187,7 @@ class EditWindowController {
     }
 
     private func save() {
+        guard !saveState.isSaving else { return }
         guard !deferUntilWindowCaptureReady(.save) else { return }
         canvasView?.commitActiveTextEditing()
         guard let finalImage = currentCompositeImage() else { return }
@@ -2205,67 +2216,96 @@ class EditWindowController {
     /// Encode and write the screenshot. When `destinationOverride` is set (user
     /// picked a path in the save panel), write there; otherwise create a unique
     /// file under the configured screenshot directory.
-    private func finishSave(image finalImage: NSImage, destinationOverride: URL?) {
-        let targetScreen = screen
-        let focusReturn = onRequestFocusReturn
+    func finishSave(image finalImage: NSImage, destinationOverride: URL?) {
+        guard let operation = saveState.begin() else { return }
         let quality = Defaults.screenshotSaveQuality
+        let directory = Defaults.screenshotSaveDirectory
+        let feedback = ToastWindow.Context(view: toolbarView ?? hostSelectionView,
+                                           operationID: operation.uuidString)
+        savingFeedback = feedback
+        freezeForSave()
+        feedback.show(L10n.screenshotSaving, duration: 600)
 
-        tearDown()
-        onComplete(nil)
-
-        if quality.usesLossyCompression {
-            ToastWindow.show(message: L10n.screenshotQualityCompressingSave, on: targetScreen, duration: 600)
-        }
-
-        ImageOutputEncoder.encodeAsync(image: finalImage, quality: quality) { result in
-            if quality.usesLossyCompression {
-                ToastWindow.dismiss()
-            }
-
-            var shouldReturnFocus = true
+        ImageOutputEncoder.encodeAsync(image: finalImage, quality: quality) { [weak self] result in
+            guard let self, self.saveState.accepts(operation) else { return }
             switch result {
             case .failure:
-                ToastWindow.show(message: L10n.screenshotCompressionFailed, on: targetScreen, duration: 3.0)
+                self.finishSaveAttempt(operation, result: .failure(SaveFailure.encoding), feedback: feedback)
             case .success(let output):
-                do {
-                    let destination: URL
-                    if let destinationOverride {
-                        destination = destinationOverride
-                        try FileManager.default.createDirectory(
-                            at: destination.deletingLastPathComponent(),
-                            withIntermediateDirectories: true
-                        )
-                    } else {
-                        let filename = FilenameTemplate.imageFileName(
-                            for: finalImage,
-                            fileExtension: output.fileExtension,
-                            imageSize: output.pixelSize
-                        )
-                        destination = try SaveDestination.uniqueFile(
-                            in: Defaults.screenshotSaveDirectory,
-                            fileName: filename
-                        )
+                let filename = destinationOverride?.lastPathComponent ?? FilenameTemplate.imageFileName(
+                    for: finalImage, fileExtension: output.fileExtension, imageSize: output.pixelSize)
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    let result: Result<URL, Error> = Result {
+                        let destination: URL
+                        if let destinationOverride {
+                            destination = destinationOverride
+                            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
+                                                                     withIntermediateDirectories: true)
+                        } else {
+                            destination = try SaveDestination.uniqueFile(in: directory, fileName: filename)
+                        }
+                        try output.data.write(to: destination, options: .atomic)
+                        return destination
                     }
-                    try output.data.write(to: destination, options: .atomic)
-                    let directoryPath = SaveDestination.displayPath(destination.deletingLastPathComponent())
-                    ToastWindow.show(message: L10n.screenshotSaved(to: directoryPath), on: targetScreen)
-                    if Defaults.autoRevealSavedFiles {
-                        NSWorkspace.shared.activateFileViewerSelecting([destination])
-                        shouldReturnFocus = false
+                    DispatchQueue.main.async { [weak self] in
+                        self?.finishSaveAttempt(operation, result: result, feedback: feedback)
                     }
-                } catch {
-                    ToastWindow.show(
-                        message: L10n.screenshotSaveFailed(error.localizedDescription),
-                        on: targetScreen,
-                        duration: 3.5
-                    )
                 }
             }
+        }
+    }
 
-            if shouldReturnFocus {
+    private enum SaveFailure: Error { case encoding }
+
+    private func finishSaveAttempt(_ operation: UUID, result: Result<URL, Error>, feedback: ToastWindow.Context) {
+        guard saveState.finish(operation) else { return }
+        unfreezeAfterSave()
+        savingFeedback = nil
+        switch result {
+        case .success(let destination):
+            let focusReturn = onRequestFocusReturn
+            tearDown()
+            onComplete(nil)
+            feedback.show(L10n.screenshotSaved(to: SaveDestination.displayPath(destination.deletingLastPathComponent())))
+            if Defaults.autoRevealSavedFiles {
+                NSWorkspace.shared.activateFileViewerSelecting([destination])
+            } else {
                 focusReturn?()
             }
+        case .failure(let error):
+            let message = error is SaveFailure ? L10n.screenshotCompressionFailed : L10n.screenshotSaveFailed(error.localizedDescription)
+            feedback.show(message, duration: 4)
+            bringEditorToFront()
         }
+    }
+
+    private func freezeForSave() {
+        dismissSizeControlPopover()
+        dismissEmojiPopover()
+        dismissBeautifyPresetPopover()
+        guard let host = hostSelectionView else { return }
+        let shield = EditorSavingInputShield(frame: host.bounds)
+        updateEditorInteractionState()
+        shield.autoresizingMask = [.width, .height]
+        host.addSubview(shield, positioned: .above, relativeTo: nil)
+        savingInputShield = shield
+        host.window?.makeFirstResponder(nil)
+        toolbars.forEach { $0.setEnabled(false, for: .save) }
+        savingKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.saveState.isSaving, event.window === self.hostSelectionView?.window else { return event }
+            if event.keyCode == 53 { self.close() }
+            return nil
+        }
+    }
+
+    private func unfreezeAfterSave() {
+        savingInputShield?.removeFromSuperview()
+        savingInputShield = nil
+        if let savingKeyMonitor { NSEvent.removeMonitor(savingKeyMonitor) }
+        savingKeyMonitor = nil
+        toolbars.forEach { $0.setEnabled(true, for: .save) }
+        updateCaptureActionAvailability()
+        updateEditorInteractionState()
     }
 
     /// Save panel for screenshots. Presented as a sheet on the overlay when
@@ -2303,6 +2343,7 @@ class EditWindowController {
     }
 
     private func upload() {
+        guard !saveState.isSaving else { return }
         guard !deferUntilWindowCaptureReady(.upload) else { return }
         canvasView?.commitActiveTextEditing()
         guard let finalImage = currentCompositeImage() else { return }
@@ -2461,6 +2502,7 @@ class EditWindowController {
     }
 
     private func pin() {
+        guard !saveState.isSaving else { return }
         guard !deferUntilWindowCaptureReady(.pin) else { return }
         canvasView?.commitActiveTextEditing()
         guard let finalImage = currentCompositeImage() else { return }
@@ -2472,6 +2514,7 @@ class EditWindowController {
     }
 
     private func record() {
+        guard !saveState.isSaving else { return }
         guard let onRecordingSelection else { return }
         canvasView?.commitActiveTextEditing()
         let rect = selectionRect
@@ -2718,7 +2761,7 @@ class EditWindowController {
     }
 
     func confirmFromKeyboard() {
-        guard !isWaitingForWindowCaptureOutput else { return }
+        guard !isWaitingForWindowCaptureOutput, !saveState.isSaving else { return }
         // The clipboard hotkey during auto-scroll stops scrolling and moves to
         // crop mode; during crop mode it confirms the crop. It must not copy to
         // the clipboard until the user is actually in the editor.
@@ -2739,7 +2782,7 @@ class EditWindowController {
     @discardableResult
     func pinFromKeyboard() -> Bool {
         guard !isWaitingForWindowCaptureOutput else { return true }
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         pin()
         return true
     }
@@ -2799,7 +2842,7 @@ class EditWindowController {
     /// Save-to-file (⌘S) entry point — mirrors `confirmFromKeyboard`'s phased
     /// behavior so the hotkey works regardless of which stage the editor is in.
     func saveFromKeyboard() {
-        guard !isWaitingForWindowCaptureOutput else { return }
+        guard !isWaitingForWindowCaptureOutput, !saveState.isSaving else { return }
         if isScrollCaptureFinalizing {
             return
         }
@@ -2830,32 +2873,32 @@ class EditWindowController {
     }
 
     func undoFromKeyboard(for event: NSEvent) -> Bool {
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         return canvasView?.undoFromKeyboard(for: event) ?? false
     }
 
     func redoFromKeyboard(for event: NSEvent) -> Bool {
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         return canvasView?.redoFromKeyboard(for: event) ?? false
     }
 
     func handleAnnotationClipboardShortcutFromKeyboard(for event: NSEvent) -> Bool {
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         return canvasView?.handleAnnotationClipboardShortcutFromKeyboard(for: event) ?? false
     }
 
     func nudgeSelectedAnnotationFromKeyboard(for event: NSEvent) -> Bool {
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         return canvasView?.nudgeSelectedAnnotationFromKeyboard(for: event) ?? false
     }
 
     func deleteSelectedAnnotationFromKeyboard(for event: NSEvent) -> Bool {
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         return canvasView?.deleteSelectedAnnotationFromKeyboard(for: event) ?? false
     }
 
     func handleEditorShortcutFromKeyboard(for event: NSEvent) -> Bool {
-        guard !isScrollCaptureBusy, !isCropping else { return false }
+        guard !isScrollCaptureBusy, !isCropping, !saveState.isSaving else { return false }
         guard let shortcut = EditorShortcutRegistry.action(matching: event) else { return false }
 
         switch shortcut {
@@ -2889,6 +2932,7 @@ class EditWindowController {
     }
 
     private func confirm() {
+        guard !saveState.isSaving else { return }
         guard !deferUntilWindowCaptureReady(.confirm) else { return }
         canvasView?.commitActiveTextEditing()
         guard let finalImage = currentCompositeImage() else {
@@ -2907,6 +2951,10 @@ class EditWindowController {
     }
 
     func tearDown() {
+        saveState.cancel()
+        if let savingFeedback { ToastWindow.dismiss(operationID: savingFeedback.operationID) }
+        savingFeedback = nil
+        unfreezeAfterSave()
         finishBeautifyShadowSizeAdjustment(repositionChrome: false)
         detachWindowCapturePreparation()
         pendingWindowCaptureAction = nil
@@ -3163,7 +3211,7 @@ class EditWindowController {
     private func updateEditorInteractionState() {
         let hasPreview = canvasView?.hasPreviewImage == true
         let hasFixedImage = overrideBaseImage != nil
-        let isBlocked = isScrollCaptureBusy || isCropping
+        let isBlocked = isScrollCaptureBusy || isCropping || saveState.isSaving
         // Once the editor is up, the canvas owns clicks inside the selection
         // rect for the entire session — drawing tools, adjust-mode handles,
         // and dragging existing annotations all go through it. The legacy
@@ -3417,6 +3465,11 @@ class ToolbarView: NSView {
                 }
             }
             button.needsDisplay = true
+        }
+        for (id, button) in buttons where id == .sizeControl {
+            let label = "\(L10n.toolbarSize) \(Defaults.toolbarSizePercent)%"
+            (button as? ToolButton)?.hoverTip = label
+            button.setAccessibilityLabel(label)
         }
         renderedIconScale = scale
     }

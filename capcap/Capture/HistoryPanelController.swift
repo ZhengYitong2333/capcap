@@ -2600,7 +2600,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
 
         let tileID = entryID(tile.entry)
         if case .files = tile.entry.kind {
-            HistoryPanelEntryActions.copyFiles(dragEntries(for: tile)) { [weak self, weak tile] success in
+            HistoryPanelEntryActions.copyFiles(dragEntries(for: tile), feedback: ToastWindow.Context(view: self)) { [weak self, weak tile] success in
                 tile?.refreshFileAvailability()
                 if success { self?.onRequestDismiss?() }
             }
@@ -2608,15 +2608,15 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         }
         if hasSelection, selectedEntryIDs.contains(tileID) {
             if case .image = tile.entry.kind,
-               HistoryPanelEntryActions.copyImages(selectedImageEntries()) {
+               HistoryPanelEntryActions.copyImages(selectedImageEntries(), feedback: ToastWindow.Context(view: self)) {
                 onRequestDismiss?()
-            } else if HistoryPanelEntryActions.copy(tile.entry) {
+            } else if HistoryPanelEntryActions.copy(tile.entry, feedback: ToastWindow.Context(view: self)) {
                 onRequestDismiss?()
             }
             return
         }
 
-        if HistoryPanelEntryActions.copy(tile.entry) {
+        if HistoryPanelEntryActions.copy(tile.entry, feedback: ToastWindow.Context(view: self)) {
             onRequestDismiss?()
         }
     }
@@ -5503,7 +5503,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         }
         if let onPrimaryClick {
             onPrimaryClick(self, event)
-        } else if HistoryPanelEntryActions.copy(entry) {
+        } else if HistoryPanelEntryActions.copy(entry, feedback: ToastWindow.Context(view: self)) {
             onRequestDismiss?()
         }
     }
@@ -5520,7 +5520,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
     }
 
     private func performCloudAction(_ actionKind: HistoryCloudActionBarView.ActionKind) {
-        if HistoryPanelEntryActions.copyCloudURL(for: entry, asMarkdown: actionKind.asMarkdown) {
+        if HistoryPanelEntryActions.copyCloudURL(for: entry, asMarkdown: actionKind.asMarkdown, feedback: ToastWindow.Context(view: self)) {
             onRequestDismiss?()
         }
     }
@@ -6687,7 +6687,7 @@ private final class HistoryPreviewWindowController: NSWindowController, NSWindow
 
     @objc private func copyCurrent() {
         if copyRecognizedSelection() { return }
-        guard HistoryPanelEntryActions.copy(currentEntry) else { return }
+        guard HistoryPanelEntryActions.copy(currentEntry, feedback: ToastWindow.Context(view: window?.contentView)) else { return }
         close()
     }
 
@@ -6718,7 +6718,7 @@ private final class HistoryPreviewWindowController: NSWindowController, NSWindow
 }
 
 private enum HistoryPanelEntryActions {
-    static func copyFiles(_ entries: [HistoryEntry], completion: @escaping (Bool) -> Void) {
+    static func copyFiles(_ entries: [HistoryEntry], feedback: ToastWindow.Context, completion: @escaping (Bool) -> Void) {
         let changeCount = NSPasteboard.general.changeCount
         HistoryFileReferences.resolveTransfer(entries) { urls in
             // A later user copy always wins over an outstanding source check.
@@ -6727,73 +6727,74 @@ private enum HistoryPanelEntryActions {
                 return
             }
             guard let urls else {
-                ToastWindow.show(message: L10n.historyPanelSourceUnavailableHint)
+                feedback.show(L10n.historyPanelSourceUnavailableHint, duration: 4)
                 completion(false)
                 return
             }
             let success = ClipboardManager.copyHistoryFilesToClipboard(urls)
             if success {
                 if Defaults.showCopyToast {
-                    ToastWindow.show(message: L10n.copiedToClipboard)
+                    feedback.show(L10n.copiedToClipboard)
                 }
                 entries.forEach { HistoryManager.shared.promoteCopiedEntryIfNeeded($0) }
             }
+            if !success { feedback.show(L10n.historyCopyFailed, duration: 4) }
             completion(success)
         }
     }
 
-    static func copy(_ entry: HistoryEntry) -> Bool {
+    static func copy(_ entry: HistoryEntry, feedback: ToastWindow.Context) -> Bool {
         switch entry.kind {
         case .image:
-            guard let image = NSImage(contentsOf: entry.fileURL) else { return false }
+            guard let image = NSImage(contentsOf: entry.fileURL) else { feedback.show(L10n.historyCopyFailed, duration: 4); return false }
             ClipboardManager.copyToClipboard(image: image)
             if Defaults.showCopyToast {
-                ToastWindow.show()
+                feedback.show(L10n.copiedToClipboard)
             }
             return recordSuccessfulCopy(of: entry)
         case .video:
-            guard ClipboardManager.copyHistoryFilesToClipboard([entry.fileURL]) else { return false }
+            guard ClipboardManager.copyHistoryFilesToClipboard([entry.fileURL]) else { feedback.show(L10n.historyCopyFailed, duration: 4); return false }
             if Defaults.showCopyToast {
-                ToastWindow.show(message: L10n.copiedToClipboard)
+                feedback.show(L10n.copiedToClipboard)
             }
             return recordSuccessfulCopy(of: entry)
         case .color(let hex):
             ClipboardManager.copyColorToClipboard(hex: hex)
-            ToastWindow.show(message: L10n.colorCopied(hex.uppercased()))
+            if Defaults.showCopyToast { feedback.show(L10n.colorCopied(hex.uppercased())) }
             return recordSuccessfulCopy(of: entry)
         case .text(let text):
             ClipboardManager.copyHistoryTextToClipboard(text.value)
             if Defaults.showCopyToast {
-                ToastWindow.show(message: L10n.copiedToClipboard)
+                feedback.show(L10n.copiedToClipboard)
             }
             return recordSuccessfulCopy(of: entry)
         case .files:
-            copyFiles([entry]) { _ in }
+            copyFiles([entry], feedback: feedback) { _ in }
             return false
         }
     }
 
-    static func copyCloudURL(for entry: HistoryEntry, asMarkdown: Bool) -> Bool {
+    static func copyCloudURL(for entry: HistoryEntry, asMarkdown: Bool, feedback: ToastWindow.Context) -> Bool {
         guard let cloudURL = entry.cloudURL else { return false }
-        return copyCloudURL(cloudURL, asMarkdown: asMarkdown)
+        return copyCloudURL(cloudURL, asMarkdown: asMarkdown, feedback: feedback)
     }
 
-    private static func copyCloudURL(_ cloudURL: URL, asMarkdown: Bool) -> Bool {
+    private static func copyCloudURL(_ cloudURL: URL, asMarkdown: Bool, feedback: ToastWindow.Context) -> Bool {
         let copyText = asMarkdown
             ? "![](\(cloudURL.absoluteString))"
             : cloudURL.absoluteString
         ClipboardManager.copyHistoryTextToClipboard(copyText)
-        ToastWindow.show(message: asMarkdown ? L10n.uploadCopiedMarkdown : L10n.uploadCopied)
+        if Defaults.showCopyToast { feedback.show(asMarkdown ? L10n.uploadCopiedMarkdown : L10n.uploadCopied) }
         return true
     }
 
-    static func copyImages(_ entries: [HistoryEntry]) -> Bool {
+    static func copyImages(_ entries: [HistoryEntry], feedback: ToastWindow.Context) -> Bool {
         let imageURLs = entries.compactMap { entry -> URL? in
             guard case .image = entry.kind else { return nil }
             return entry.fileURL
         }
-        guard ClipboardManager.copyHistoryFilesToClipboard(imageURLs) else { return false }
-        ToastWindow.show(message: L10n.copiedToClipboard)
+        guard ClipboardManager.copyHistoryFilesToClipboard(imageURLs) else { feedback.show(L10n.historyCopyFailed, duration: 4); return false }
+        if Defaults.showCopyToast { feedback.show(L10n.copiedToClipboard) }
         if entries.count == 1, let entry = entries.first {
             HistoryManager.shared.promoteCopiedEntryIfNeeded(entry)
         }

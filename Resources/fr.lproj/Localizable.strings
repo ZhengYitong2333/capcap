@@ -772,3 +772,5 @@
 "historyPanelTransparencyHint" = "Applique la transparence aux fonds de la barre supérieure, de l’historique et des réglages, sans altérer le texte ni les images";
 "historyResetTransparency" = "Rétablir la transparence par défaut";
 "historyTransparencySystemOverride" = "La réduction de transparence est activée dans les réglages système";
+"screenshotSaving" = "Enregistrement de la capture";
+"historyCopyFailed" = "Impossible de copier cet élément";
