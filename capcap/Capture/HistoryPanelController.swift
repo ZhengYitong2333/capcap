@@ -1667,6 +1667,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         actionButtonsContainer.spacing = 8
         actionButtonsContainer.translatesAutoresizingMaskIntoConstraints = false
         actionButtonsContainer.addArrangedSubview(deleteButton)
+        actionButtonsContainer.setCustomSpacing(16, after: deleteButton)
         actionButtonsContainer.addArrangedSubview(infoButton)
         actionButtonsContainer.addArrangedSubview(finderButton)
         actionButtonsContainer.addArrangedSubview(lockButton)
@@ -4416,6 +4417,12 @@ private final class HistoryPanelActionButton: NSControl {
 
 private final class HistoryPanelFilterButton: NSControl {
     var onHover: (() -> Void)?
+    var onHoverEnded: (() -> Void)?
+    private var hovered = false
+    var isPointerInside: Bool {
+        guard let window, !isHiddenOrHasHiddenAncestor, !window.ignoresMouseEvents else { return false }
+        return visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
     let filter: HistoryPanelFilter
     private let label = NSTextField(labelWithString: "")
     private let glossLayer = CAGradientLayer()
@@ -4475,7 +4482,7 @@ private final class HistoryPanelFilterButton: NSControl {
 
     override var intrinsicContentSize: NSSize {
         NSSize(
-            width: label.intrinsicContentSize.width + 24,
+            width: ceil((title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]).width) + 24,
             height: 26
         )
     }
@@ -4489,9 +4496,13 @@ private final class HistoryPanelFilterButton: NSControl {
     }
 
     private func applyAppearance() {
-        let background = filter.tint.withAlphaComponent(isSelected ? 1 : 0.22).cgColor
+        let background = filter.tint.withAlphaComponent(isSelected ? 1 : (hovered ? 0.24 : 0.18)).cgColor
         let previous = layer?.presentation()?.backgroundColor ?? layer?.backgroundColor
         layer?.backgroundColor = background
+        label.font = .systemFont(ofSize: 13, weight: isSelected ? .semibold : .medium)
+        setAccessibilityValue(isSelected ? 1 : 0)
+        glossLayer.colors = [NSColor.white.withAlphaComponent(isSelected ? 0.14 : 0.08).cgColor,
+                             NSColor.white.withAlphaComponent(0.025).cgColor, NSColor.clear.cgColor]
         layer?.borderWidth = 0.5
         layer?.borderColor = NSColor.white.withAlphaComponent(isSelected ? 0.24 : 0.12).cgColor
         label.textColor = isSelected
@@ -4509,11 +4520,20 @@ private final class HistoryPanelFilterButton: NSControl {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        hovered = true
+        applyAppearance()
         guard !isSelected, !isHiddenOrHasHiddenAncestor, window?.ignoresMouseEvents == false else { return }
         onHover?()
     }
 
+    override func mouseExited(with event: NSEvent) {
+        hovered = false
+        applyAppearance()
+        onHoverEnded?()
+    }
+
     override func mouseDown(with event: NSEvent) {
+        onHoverEnded?()
         sendAction(action, to: target)
     }
 }
@@ -4892,7 +4912,7 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         addSubview(selectionBadgeView)
 
         let metadataFontSize: CGFloat = presentation == .dialog ? 12 : 9.5
-        metaLabel.font = NSFont.monospacedDigitSystemFont(ofSize: metadataFontSize, weight: .semibold)
+        metaLabel.font = NSFont.monospacedDigitSystemFont(ofSize: metadataFontSize, weight: .regular)
         metaLabel.textColor = NSColor.white.withAlphaComponent(0.56)
         metaLabel.alignment = .center
         metaLabel.horizontalInset = 0
@@ -5113,6 +5133,9 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         textPreviewLabel.isHidden = true
         toolTip = nil
         metaLabel.lineBreakMode = .byTruncatingTail
+        let metadataWeight: NSFont.Weight
+        if case .files = entry.kind { metadataWeight = .semibold } else { metadataWeight = .regular }
+        metaLabel.font = .monospacedDigitSystemFont(ofSize: presentation == .dialog ? 12 : 9.5, weight: metadataWeight)
 
         let overlayHint = Self.overlayHint(for: entry, supportsDrag: supportsDrag)
         overlayLabel.stringValue = overlayHint
