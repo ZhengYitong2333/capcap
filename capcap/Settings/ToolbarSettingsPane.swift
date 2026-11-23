@@ -17,10 +17,13 @@ final class ToolbarSettingsPane: NSView {
     private var workingLayout: ToolbarLayout = Defaults.toolbarLayout.normalized()
 
     private let sizeLabel = ToolbarSettingsPane.sectionTitleLabel()
-    private let sizeControl = NSSegmentedControl(
-        labels: Defaults.toolbarSizePercentages.map { "\($0)%" },
-        trackingMode: .selectOne, target: nil, action: nil
+    private let sizeSlider = NSSlider(
+        value: Double(Defaults.toolbarSizePercent),
+        minValue: Double(Defaults.toolbarSizeRange.lowerBound),
+        maxValue: Double(Defaults.toolbarSizeRange.upperBound),
+        target: nil, action: nil
     )
+    private let sizeValueLabel = NSTextField(labelWithString: "")
     private let preview = ToolbarLayoutPreviewView()
     private var previewHeightConstraint: NSLayoutConstraint!
     private var primaryGrid: ToolbarSlotGridView!
@@ -47,6 +50,8 @@ final class ToolbarSettingsPane: NSView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         buildUI()
+        NotificationCenter.default.addObserver(self, selector: #selector(syncSizePresentation),
+                                               name: .toolbarSizeDidChange, object: nil)
         syncFromWorkingLayout()
         NotificationCenter.default.addObserver(
             self,
@@ -87,10 +92,14 @@ final class ToolbarSettingsPane: NSView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
-        sizeControl.target = self
-        sizeControl.action = #selector(sizeChanged)
-        sizeControl.selectedSegment = Defaults.toolbarSizePercentages.firstIndex(of: Defaults.toolbarSizePercent) ?? 1
-        let sizeRow = NSStackView(views: [sizeLabel, sizeControl])
+        sizeSlider.target = self
+        sizeSlider.action = #selector(sizeChanged(_:))
+        sizeSlider.isContinuous = true
+        sizeSlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        sizeValueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        sizeValueLabel.alignment = .right
+        sizeValueLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        let sizeRow = NSStackView(views: [sizeLabel, sizeSlider, sizeValueLabel])
         sizeRow.spacing = 12
         stack.addArrangedSubview(sizeRow)
 
@@ -266,9 +275,15 @@ final class ToolbarSettingsPane: NSView {
 
     // MARK: - Actions
 
-    @objc private func sizeChanged() {
-        guard Defaults.toolbarSizePercentages.indices.contains(sizeControl.selectedSegment) else { return }
-        Defaults.toolbarSizePercent = Defaults.toolbarSizePercentages[sizeControl.selectedSegment]
+    @objc private func sizeChanged(_ sender: NSSlider) {
+        let step = Double(Defaults.toolbarSizeStep)
+        Defaults.toolbarSizePercent = Int((sender.doubleValue / step).rounded()) * Defaults.toolbarSizeStep
+        syncSizePresentation()
+    }
+
+    @objc private func syncSizePresentation() {
+        sizeSlider.integerValue = Defaults.toolbarSizePercent
+        sizeValueLabel.stringValue = "\(Defaults.toolbarSizePercent)%"
         preview.scale = Defaults.toolbarScale
         updatePreviewHeight()
     }
@@ -295,7 +310,8 @@ final class ToolbarSettingsPane: NSView {
 
     private func applyLocalizedStrings() {
         sizeLabel.stringValue = L10n.toolbarSize
-        sizeControl.setAccessibilityLabel(L10n.toolbarSize)
+        sizeSlider.setAccessibilityLabel(L10n.toolbarSize)
+        syncSizePresentation()
         primaryTitle.stringValue = L10n.toolbarSettingsPrimaryTitle
         primaryHint.stringValue = L10n.toolbarSettingsPrimaryHint
         sideTitle.stringValue = L10n.toolbarSettingsSideTitle

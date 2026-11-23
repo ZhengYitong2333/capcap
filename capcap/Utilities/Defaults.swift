@@ -70,6 +70,7 @@ enum AppLanguage: String, CaseIterable {
 }
 
 extension Notification.Name {
+    static let toolbarSizeDidChange = Notification.Name("capcap.toolbarSizeDidChange")
     static let languageDidChange = Notification.Name("capcap.languageDidChange")
     static let historyCacheEnabledDidChange = Notification.Name("capcap.historyCacheEnabledDidChange")
     static let clipboardTextCacheEnabledDidChange = Notification.Name("capcap.clipboardTextCacheEnabledDidChange")
@@ -2108,15 +2109,25 @@ struct Defaults {
         }
     }
 
-    static let toolbarSizePercentages = [75, 100, 125, 150]
+    static let toolbarSizeRange = 50...200
+    static let toolbarSizeStep = 5
+
+    private static func normalizedToolbarSizePercent(_ value: Int) -> Int {
+        let clamped = min(toolbarSizeRange.upperBound, max(toolbarSizeRange.lowerBound, value))
+        return Int((Double(clamped) / Double(toolbarSizeStep)).rounded()) * toolbarSizeStep
+    }
+
     static var toolbarSizePercent: Int {
         get {
-            let value = defaults.integer(forKey: "editor.toolbarSizePercent")
-            return toolbarSizePercentages.contains(value) ? value : 100
+            normalizedToolbarSizePercent(defaults.object(forKey: "editor.toolbarSizePercent") as? Int ?? 100)
         }
         set {
-            defaults.set(toolbarSizePercentages.contains(newValue) ? newValue : 100,
-                         forKey: "editor.toolbarSizePercent")
+            let oldValue = toolbarSizePercent
+            let value = normalizedToolbarSizePercent(newValue)
+            defaults.set(value, forKey: "editor.toolbarSizePercent")
+            if oldValue != value {
+                NotificationCenter.default.post(name: .toolbarSizeDidChange, object: nil)
+            }
         }
     }
 
