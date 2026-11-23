@@ -1,32 +1,6 @@
 import AppKit
 
-/// A cancellable dwell, shared by all filter buttons in one panel.
-final class HistoryFilterDwell {
-    private var work: DispatchWorkItem?
-    private var generation = 0
-
-    func schedule(after delay: TimeInterval = 0.2, action: @escaping () -> Void) {
-        cancel()
-        let expected = generation
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.generation == expected else { return }
-            self.work = nil
-            action()
-        }
-        self.work = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-    }
-
-    func cancel() {
-        generation += 1
-        work?.cancel()
-        work = nil
-    }
-
-    deinit { work?.cancel() }
-}
-
-struct HistoryBrowsePosition {
+struct HistoryBrowsePosition: Equatable {
     let entryID: String
     let index: Int
     let fraction: CGFloat
@@ -40,11 +14,26 @@ struct HistoryBrowsePosition {
 /// Session-only state survives panel destruction and temporary screen removal.
 final class HistoryBrowseMemory {
     static let shared = HistoryBrowseMemory()
-    private var positions: [String: HistoryBrowsePosition] = [:]
+    static let didChange = Notification.Name("HistoryBrowseMemoryDidChange")
+    private var positions: [HistoryPanelFilter: HistoryBrowsePosition] = [:]
+    private(set) var selectedFilter: HistoryPanelFilter = .all
 
-    subscript(context: String, filter: HistoryPanelFilter) -> HistoryBrowsePosition? {
-        get { positions["\(context)/\(filter)"] }
-        set { positions["\(context)/\(filter)"] = newValue }
+    subscript(filter: HistoryPanelFilter) -> HistoryBrowsePosition? { positions[filter] }
+
+    func select(_ filter: HistoryPanelFilter, source: AnyObject) {
+        guard selectedFilter != filter else { return }
+        selectedFilter = filter
+        notify(source: source)
+    }
+
+    func remember(_ position: HistoryBrowsePosition, for filter: HistoryPanelFilter, source: AnyObject) {
+        guard positions[filter] != position else { return }
+        positions[filter] = position
+        notify(source: source)
+    }
+
+    private func notify(source: AnyObject) {
+        NotificationCenter.default.post(name: Self.didChange, object: self, userInfo: ["source": source])
     }
 }
 
