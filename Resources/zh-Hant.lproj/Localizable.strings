@@ -767,3 +767,6 @@
 "historyHoverPreviewSizeHint" = "預覽大小占預設最大尺寸的百分比";
 "historyHoverPreviewDelayValue" = "%.1f 秒";
 "historyHoverPreviewSizeValue" = "%d%%";
+
+"historyPanelTransparency" = "背景透明度";
+"historyPanelTransparencyHint" = "同步調整頂部長條、歷史欄和設定背景，文字和圖片保持清晰";

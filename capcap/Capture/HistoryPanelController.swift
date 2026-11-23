@@ -27,7 +27,7 @@ final class HistoryPanelController {
     private var dialogPanel: NSPanel?
     private var dialogOutsideMonitors: [Any] = []
     private var isDialogLocked = false
-    private var notchController: HistoryNotchWindowController?
+    private var notchControllers: [CGDirectDisplayID: HistoryNotchWindowController] = [:]
 
     init(onEditEntry: @escaping (HistoryEntry) -> Void) {
         self.onEditEntry = onEditEntry
@@ -65,7 +65,7 @@ final class HistoryPanelController {
     deinit {
         NotificationCenter.default.removeObserver(self)
         closeDialog()
-        notchController?.close()
+        notchControllers.values.forEach { $0.close() }
     }
 
     func toggleFromUserRequest(holdOpenUntilMouseEnters: Bool = false) {
@@ -75,7 +75,10 @@ final class HistoryPanelController {
             return
         }
         if Defaults.historyPanelNotchEnabled {
-            ensureNotchController().toggleFromUserRequest(holdOpenUntilMouseEnters: holdOpenUntilMouseEnters)
+            syncNotchAvailability()
+            guard let screen = NSScreen.screenForMouseLocation() ?? NSScreen.main ?? NSScreen.screens.first,
+                  let displayID = Self.displayID(for: screen) else { return }
+            notchControllers[displayID]?.toggleFromUserRequest(holdOpenUntilMouseEnters: holdOpenUntilMouseEnters)
         }
     }
 
@@ -100,20 +103,29 @@ final class HistoryPanelController {
 
     private func syncNotchAvailability() {
         guard Defaults.isHistoryCacheAvailable, Defaults.historyPanelNotchEnabled else {
-            notchController?.close()
-            notchController = nil
+            notchControllers.values.forEach { $0.close() }
+            notchControllers.removeAll()
             return
         }
-        _ = ensureNotchController()
+        let screens = NSScreen.screens
+        let activeIDs = Set(screens.compactMap { Self.displayID(for: $0) })
+        for displayID in Array(notchControllers.keys) where !activeIDs.contains(displayID) {
+            notchControllers.removeValue(forKey: displayID)?.close()
+        }
+        for screen in screens {
+            guard let displayID = Self.displayID(for: screen) else { continue }
+            if let controller = notchControllers[displayID] {
+                controller.updateScreen(screen)
+            } else {
+                notchControllers[displayID] = HistoryNotchWindowController(
+                    screen: screen, onEditEntry: onEditEntry
+                )
+            }
+        }
     }
 
-    private func ensureNotchController() -> HistoryNotchWindowController {
-        if let notchController {
-            return notchController
-        }
-        let controller = HistoryNotchWindowController(onEditEntry: onEditEntry)
-        notchController = controller
-        return controller
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 
     @objc private func resizeDialog() {
@@ -250,14 +262,30 @@ private final class HistoryFloatingPanel: NSPanel {
 }
 
 private final class HistoryPanelChromeView: NSView {
+    private let gradient = CAGradientLayer()
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.cornerRadius = 18
         layer?.cornerCurve = .continuous
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.06, alpha: 0.86).cgColor
-        layer?.borderColor = accentGreen.withAlphaComponent(0.34).cgColor
+        layer?.addSublayer(gradient)
+        layer?.masksToBounds = true
+        updateAppearance()
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
         layer?.borderWidth = 1
+        NotificationCenter.default.addObserver(self, selector: #selector(updateAppearance),
+                                               name: .historyPanelAppearanceDidChange, object: nil)
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func updateAppearance() {
+        AppSurfaceAppearance.update(gradient)
+    }
+
+    override func layout() {
+        super.layout()
+        gradient.frame = bounds
     }
 
     required init?(coder: NSCoder) {
@@ -266,11 +294,13 @@ private final class HistoryPanelChromeView: NSView {
 }
 
 private final class HistoryNotchWindowController: NSWindowController {
+    private var anchorScreen: NSScreen
     private let rootView: HistoryNotchRootView
     private var hoverSampler: DispatchSourceTimer?
     private var clickMonitors: [Any] = []
     private var expandWorkItem: DispatchWorkItem?
     private var collapseWorkItem: DispatchWorkItem?
+    private var collapseCompletionWorkItem: DispatchWorkItem?
     private var isCollapsing = false
     private var suppressCollapseUntil: Date?
     private var holdsOpenUntilMouseEntersHoverRegion = false
@@ -283,9 +313,9 @@ private final class HistoryNotchWindowController: NSWindowController {
     private let sampleInterval: TimeInterval = 0.035
     private let postExpandGrace: TimeInterval = 0.5
 
-    init(onEditEntry: @escaping (HistoryEntry) -> Void) {
+    init(screen: NSScreen, onEditEntry: @escaping (HistoryEntry) -> Void) {
+        anchorScreen = screen
         rootView = HistoryNotchRootView(onEditEntry: onEditEntry)
-        let screen = Self.anchorScreen()
         rootView.updateGeometry(for: screen)
         let frame = Self.frame(for: screen, expandedSize: rootView.expandedSize)
         let panel = HistoryFloatingPanel(
@@ -318,12 +348,6 @@ private final class HistoryNotchWindowController: NSWindowController {
         panel.orderFrontRegardless()
         startMouseMonitoring()
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screenDidChange),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
         NotificationCenter.default.addObserver(self, selector: #selector(screenDidChange),
                                                name: .historyCardSizeDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(screenDidChange),
@@ -340,6 +364,7 @@ private final class HistoryNotchWindowController: NSWindowController {
 
     override func close() {
         NotificationCenter.default.removeObserver(self)
+        collapseCompletionWorkItem?.cancel()
         stopMouseMonitoring()
         super.close()
     }
@@ -355,6 +380,7 @@ private final class HistoryNotchWindowController: NSWindowController {
 
     private func expand(holdOpenUntilMouseEnters: Bool = false) {
         guard !rootView.isExpanded else { return }
+        collapseCompletionWorkItem?.cancel()
         isCollapsing = false
         cancelCollapse()
         holdsOpenUntilMouseEntersHoverRegion = holdOpenUntilMouseEnters
@@ -372,11 +398,14 @@ private final class HistoryNotchWindowController: NSWindowController {
         commandOpenedMouseHasEnteredHoverRegion = false
         rootView.setExpanded(false, animated: true)
         isCollapsing = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + collapseAnimationDuration) { [weak self] in
+        collapseCompletionWorkItem?.cancel()
+        let completion = DispatchWorkItem { [weak self] in
             guard let self, self.isCollapsing else { return }
             self.isCollapsing = false
             self.window?.ignoresMouseEvents = true
         }
+        collapseCompletionWorkItem = completion
+        DispatchQueue.main.asyncAfter(deadline: .now() + collapseAnimationDuration, execute: completion)
     }
 
     private func requestCollapse() {
@@ -526,14 +555,12 @@ private final class HistoryNotchWindowController: NSWindowController {
     }
 
     private func collapsedHitRect() -> NSRect {
-        let screen = Self.anchorScreen() ?? window?.screen
-        let screenFrame = screen?.frame ?? .zero
-        let notchAreaHeight = screen?.safeAreaInsets.top ?? 0
-        let height = (notchAreaHeight > 0 ? notchAreaHeight : 24) + 6
+        let screenFrame = anchorScreen.frame
         let size = rootView.collapsedSize
+        let height = size.height + (anchorScreen.safeAreaInsets.top > 0 ? 6 : 0)
         let rect = NSRect(
             x: screenFrame.midX - size.width / 2,
-            y: screenFrame.maxY - height,
+            y: screenFrame.maxY - rootView.topInset - height,
             width: size.width,
             height: height
         )
@@ -550,28 +577,27 @@ private final class HistoryNotchWindowController: NSWindowController {
         collapseWorkItem = nil
     }
 
+    func updateScreen(_ screen: NSScreen) {
+        anchorScreen = screen
+        screenDidChange()
+    }
+
     @objc private func screenDidChange() {
-        let screen = Self.anchorScreen()
-        rootView.updateGeometry(for: screen)
-        window?.setFrame(Self.frame(for: screen, expandedSize: rootView.expandedSize), display: true)
+        rootView.updateGeometry(for: anchorScreen)
+        window?.setFrame(Self.frame(for: anchorScreen, expandedSize: rootView.expandedSize), display: true)
     }
 
     private static func frame(for screen: NSScreen?, expandedSize: NSSize) -> NSRect {
         let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let height = expandedSize.height + HistoryNotchGeometry.geometry(for: screen).topInset
         return NSRect(
             x: screenFrame.midX - expandedSize.width / 2,
-            y: screenFrame.maxY - expandedSize.height,
+            y: screenFrame.maxY - height,
             width: expandedSize.width,
-            height: expandedSize.height
+            height: height
         )
     }
 
-    private static func anchorScreen() -> NSScreen? {
-        NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
-            ?? NSScreen.screenForMouseLocation()
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-    }
 }
 
 struct HistoryNotchGeometry {
@@ -580,8 +606,10 @@ struct HistoryNotchGeometry {
     var screenWidth: CGFloat
     var notchLeadingX: CGFloat
     var screenHeight: CGFloat = 800
+    var hasPhysicalNotch = true
 
     let expandedBottomInset: CGFloat = 0
+    var topInset: CGFloat { hasPhysicalNotch ? 0 : 4 }
 
     static func geometry(for screen: NSScreen?) -> HistoryNotchGeometry {
         let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
@@ -603,12 +631,16 @@ struct HistoryNotchGeometry {
             notchHeight: safeTop > 0 ? safeTop : 24,
             screenWidth: screenFrame.width,
             notchLeadingX: notchLeadingX,
-            screenHeight: screenFrame.height
+            screenHeight: screenFrame.height,
+            hasPhysicalNotch: safeTop > 0
         )
     }
 
     var collapsedSize: NSSize {
-        NSSize(width: notchWidth, height: notchHeight)
+        if hasPhysicalNotch {
+            return NSSize(width: notchWidth, height: notchHeight)
+        }
+        return NSSize(width: 220, height: 6)
     }
 
     var contentHeight: CGFloat {
@@ -656,7 +688,8 @@ private final class HistoryNotchRootView: NSView {
 
     var collapsedSize: NSSize { geometry.collapsedSize }
     var expandedSize: NSSize { geometry.expandedSize }
-    var visibleHeight: CGFloat { currentSize.height }
+    var topInset: CGFloat { geometry.topInset }
+    var visibleHeight: CGFloat { currentSize.height + topInset }
 
     private let shellView = HistoryNotchShellView()
     private let contentView: HistoryPanelContentView
@@ -666,6 +699,7 @@ private final class HistoryNotchRootView: NSView {
     private(set) var isExpanded = false
     private var currentSize = HistoryNotchGeometry.geometry(for: NSScreen.main).collapsedSize
     private var countGeneration = 0
+    private var transitionGeneration = 0
 
     var onRequestDismiss: (() -> Void)? {
         didSet {
@@ -699,6 +733,7 @@ private final class HistoryNotchRootView: NSView {
         shellView.autoresizingMask = [.width, .height]
         addSubview(shellView)
 
+        contentView.wantsLayer = true
         contentView.alphaValue = 0
         contentView.isHidden = true
         shellView.addSubview(contentView)
@@ -743,6 +778,7 @@ private final class HistoryNotchRootView: NSView {
 
     func updateGeometry(for screen: NSScreen?) {
         geometry = HistoryNotchGeometry.geometry(for: screen)
+        collapsedLabel.isHidden = !geometry.hasPhysicalNotch
         contentView.updateNotchGeometry(geometry)
         currentSize = isExpanded ? expandedSize : collapsedSize
         needsLayout = true
@@ -751,6 +787,9 @@ private final class HistoryNotchRootView: NSView {
 
     func setExpanded(_ expanded: Bool, animated: Bool) {
         guard isExpanded != expanded else { return }
+        transitionGeneration += 1
+        let generation = transitionGeneration
+        let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         isExpanded = expanded
         currentSize = expanded ? expandedSize : collapsedSize
 
@@ -769,19 +808,38 @@ private final class HistoryNotchRootView: NSView {
 
         layoutShell(animated: animated)
 
-        if animated {
+        if animated && !geometry.hasPhysicalNotch {
+            // Let the shell open before revealing rows; hide rows before shrinking.
+            let fromOpacity = contentView.layer?.presentation()?.opacity ?? Float(contentView.alphaValue)
+            changes()
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = fromOpacity
+            fade.toValue = expanded ? 1 : 0
+            fade.duration = expanded ? 0.18 : 0.08
+            fade.beginTime = (contentView.layer?.convertTime(CACurrentMediaTime(), from: nil) ?? CACurrentMediaTime())
+                + (expanded ? 0.10 : 0)
+            fade.fillMode = .backwards
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            contentView.layer?.add(fade, forKey: "historyContentFade")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { [weak self] in
+                guard let self, self.transitionGeneration == generation else { return }
+                self.contentView.isHidden = !expanded
+                if expanded { self.syncHoverStateWithCurrentMouse() }
+            }
+        } else if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = expanded ? 0.35 : 0.3
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 changes()
             } completionHandler: {
-                guard self.isExpanded == expanded else { return }
+                guard self.transitionGeneration == generation else { return }
                 self.contentView.isHidden = !expanded
                 if expanded {
                     self.syncHoverStateWithCurrentMouse()
                 }
             }
         } else {
+            contentView.layer?.removeAnimation(forKey: "historyContentFade")
             changes()
             contentView.isHidden = !expanded
         }
@@ -811,17 +869,21 @@ private final class HistoryNotchRootView: NSView {
         let expandedRect = shapeRect(for: expandedSize)
         let collapsedRect = shapeRect(for: collapsedSize)
 
-        shellView.setShape(rect: currentRect, expanded: isExpanded, animated: animated)
+        shellView.setShape(
+            rect: currentRect, expanded: isExpanded,
+            hasPhysicalNotch: geometry.hasPhysicalNotch, animated: animated
+        )
         contentView.frame = NSRect(
             x: expandedRect.minX,
             y: expandedRect.maxY - geometry.contentHeight,
             width: expandedRect.width,
             height: geometry.contentHeight
         )
+        let labelInset: CGFloat = 16
         collapsedLabel.frame = NSRect(
-            x: collapsedRect.minX + 16,
+            x: collapsedRect.minX + labelInset,
             y: collapsedRect.midY - 9,
-            width: collapsedRect.width - 32,
+            width: collapsedRect.width - labelInset * 2,
             height: 18
         )
     }
@@ -829,7 +891,7 @@ private final class HistoryNotchRootView: NSView {
     private func shapeRect(for size: NSSize) -> NSRect {
         NSRect(
             x: bounds.midX - size.width / 2,
-            y: bounds.maxY - size.height,
+            y: bounds.maxY - topInset - size.height,
             width: size.width,
             height: size.height
         )
@@ -848,22 +910,37 @@ private final class HistoryNotchRootView: NSView {
             }
         }
     }
+
 }
 
 private final class HistoryNotchShellView: NSView {
-    private let fillLayer = CAShapeLayer()
+    private let fillLayer = CAGradientLayer()
     private let maskLayer = CAShapeLayer()
+    private let borderLayer = CAShapeLayer()
     private var shapeRect: NSRect = .zero
     private var isExpanded = false
+    private var hasPhysicalNotch = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        fillLayer.fillColor = NSColor.black.cgColor
+        AppSurfaceAppearance.update(fillLayer)
         layer?.addSublayer(fillLayer)
+        borderLayer.fillColor = NSColor.clear.cgColor
+        borderLayer.lineWidth = 1
+        layer?.addSublayer(borderLayer)
         maskLayer.fillColor = NSColor.black.cgColor
         layer?.mask = maskLayer
+        NotificationCenter.default.addObserver(self, selector: #selector(updateAppearance),
+                                               name: .historyPanelAppearanceDidChange, object: nil)
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func updateAppearance() {
+        fillLayer.removeAnimation(forKey: "historyStripTint")
+        updateMask(animated: false)
     }
 
     required init?(coder: NSCoder) {
@@ -875,31 +952,76 @@ private final class HistoryNotchShellView: NSView {
         updateMask(animated: false)
     }
 
-    func setShape(rect: NSRect, expanded: Bool, animated: Bool) {
+    func setShape(rect: NSRect, expanded: Bool, hasPhysicalNotch: Bool, animated: Bool) {
         let previousPath = maskLayer.presentation()?.path ?? maskLayer.path
         shapeRect = rect
         isExpanded = expanded
+        self.hasPhysicalNotch = hasPhysicalNotch
         updateMask(animated: animated, from: previousPath)
     }
 
     private func updateMask(animated: Bool, from previousPath: CGPath? = nil) {
         guard shapeRect.width > 0, shapeRect.height > 0 else { return }
 
-        let path = Self.islandPath(
-            in: shapeRect,
-            flareRadius: isExpanded ? 14 : 4,
-            bottomCornerRadius: isExpanded ? 20 : 10
-        )
+        let path: CGPath
+        if hasPhysicalNotch {
+            path = Self.islandPath(
+                in: shapeRect,
+                flareRadius: isExpanded ? 14 : 4,
+                bottomCornerRadius: isExpanded ? 20 : 10
+            )
+        } else {
+            let radius: CGFloat = isExpanded ? 20 : shapeRect.height / 2
+            path = CGPath(roundedRect: shapeRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        }
 
+        let previousColors = fillLayer.presentation()?.colors ?? fillLayer.colors
+        let colors = hasPhysicalNotch && !isExpanded
+            ? Array(repeating: NSColor.black.cgColor, count: 3)
+            : AppSurfaceAppearance.colors.map(\.cgColor)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        fillLayer.colors = colors
         fillLayer.frame = bounds
-        fillLayer.path = path
         maskLayer.frame = bounds
         maskLayer.path = path
+        borderLayer.frame = bounds
+        borderLayer.path = path
+        borderLayer.strokeColor = (hasPhysicalNotch && !isExpanded
+            ? NSColor.clear : NSColor.white.withAlphaComponent(0.12)).cgColor
         CATransaction.commit()
 
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            fillLayer.removeAllAnimations()
+            maskLayer.removeAllAnimations()
+            borderLayer.removeAllAnimations()
+            return
+        }
         guard animated, let previousPath else { return }
+
+        if !hasPhysicalNotch {
+            // Read the presentation path when reversing so rapid re-entry never jumps.
+            let animation = CABasicAnimation(keyPath: "path")
+            animation.fromValue = previousPath
+            animation.toValue = path
+            animation.duration = isExpanded ? 0.34 : 0.26
+            animation.beginTime = maskLayer.convertTime(CACurrentMediaTime(), from: nil)
+                + (isExpanded ? 0 : 0.08)
+            animation.fillMode = .backwards
+            animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+            maskLayer.add(animation, forKey: "historyNotchShape")
+            borderLayer.add(animation, forKey: "historyNotchBorder")
+
+            let tint = CABasicAnimation(keyPath: "colors")
+            tint.fromValue = previousColors
+            tint.toValue = colors
+            tint.duration = animation.duration
+            tint.beginTime = animation.beginTime
+            tint.fillMode = .backwards
+            tint.timingFunction = animation.timingFunction
+            fillLayer.add(tint, forKey: "historyStripTint")
+            return
+        }
 
         let animation = Self.springAnimation(
             keyPath: "path",
@@ -907,8 +1029,8 @@ private final class HistoryNotchShellView: NSView {
             to: path,
             expanded: isExpanded
         )
-        fillLayer.add(animation, forKey: "historyNotchFill")
         maskLayer.add(animation, forKey: "historyNotchShape")
+        borderLayer.add(animation, forKey: "historyNotchBorder")
     }
 
     private static func islandPath(
@@ -972,7 +1094,7 @@ private final class HistoryNotchShellView: NSView {
     }
 }
 
-private enum HistoryPanelPresentation {
+enum HistoryPanelPresentation {
     case dialog
     case notch
 
@@ -1357,6 +1479,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private var searchFieldTrailingConstraint: NSLayoutConstraint?
     private var confirmationDismissMonitor: Any?
     private var selectionKeyMonitor: Any?
+    private var resizeHandles: [HistoryPanelResizeHandle] = []
+    private let historyPreviewHotkeyOwner = UUID()
     private var previewController: HistoryPreviewWindowController?
     private var filePreviewController: HistoryFileQuickLookWindowController?
     private weak var activeHoverTile: HistoryPanelTileView?
@@ -1454,7 +1578,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         hoverPreviewController.close()
         previewPrefetchRequests.values.forEach { $0.cancel() }
         previewController?.close()
-        HotkeyManager.shared.unregisterHistoryPreview()
+        HotkeyManager.shared.unregisterHistoryPreview(owner: historyPreviewHotkeyOwner)
     }
 
     override func layout() {
@@ -1464,6 +1588,10 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
 
     func updateNotchGeometry(_ geometry: HistoryNotchGeometry) {
         guard presentation == .notch else { return }
+        resizeHandles.forEach { $0.updateSideInset(geometry.hasPhysicalNotch ? 10 : 0) }
+        // External screens have no central obstruction. Let the filter row use
+        // the space up to the action/search controls instead of a fictitious notch.
+        filterViewportWidthConstraint?.isActive = geometry.hasPhysicalNotch
         filterViewportWidthConstraint?.constant = geometry.filterViewportWidth(
             headerInset: presentation.headerInset
         )
@@ -1602,8 +1730,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             equalTo: header.trailingAnchor,
             constant: HistoryPanelLayout.searchHiddenOffset
         )
-        let filterViewportWidth = filterScrollView.widthAnchor.constraint(equalToConstant: 1)
-        filterViewportWidth.isActive = presentation == .notch
+        let filterViewportWidth = filterScrollView.widthAnchor.constraint(lessThanOrEqualToConstant: 1)
+        // Activated by updateNotchGeometry only for an actual hardware notch.
         filterViewportWidthConstraint = filterViewportWidth
         actionButtonsTrailingConstraint = actionButtonsTrailing
         searchFieldTrailingConstraint = searchFieldTrailing
@@ -1657,6 +1785,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             let handle = HistoryPanelResizeHandle(presentation: presentation, edge: edge)
             addSubview(handle)
             handle.pin(to: self)
+            resizeHandles.append(handle)
         }
 
         installSizeSliderPanel()
@@ -2712,10 +2841,10 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
               !HistoryFileQuickLookWindowController.isPresented,
               let entry = activeHoverTile?.entry,
               previewKind(for: entry) != nil else {
-            HotkeyManager.shared.unregisterHistoryPreview()
+            HotkeyManager.shared.unregisterHistoryPreview(owner: historyPreviewHotkeyOwner)
             return
         }
-        HotkeyManager.shared.registerHistoryPreview { [weak self] in
+        HotkeyManager.shared.registerHistoryPreview(owner: historyPreviewHotkeyOwner) { [weak self] in
             guard let self,
                   self.isActive,
                   !self.isSearchInputActive,
@@ -2856,7 +2985,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         filePreviewController?.close()
         let previewEntries = visibleEntries.filter { previewKind(for: $0) == kind }
         guard !previewEntries.isEmpty else { return }
-        HotkeyManager.shared.unregisterHistoryPreview()
+        HotkeyManager.shared.unregisterHistoryPreview(owner: historyPreviewHotkeyOwner)
         previewController?.close()
         guard previewController?.window?.isVisible != true else { return }
         let controller = HistoryPreviewWindowController(
@@ -2892,7 +3021,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         let initialIndex = references.firstIndex {
             URL(fileURLWithPath: $0.path).standardizedFileURL.path == initialPath
         } ?? 0
-        HotkeyManager.shared.unregisterHistoryPreview()
+        HotkeyManager.shared.unregisterHistoryPreview(owner: historyPreviewHotkeyOwner)
         previewController?.close()
         filePreviewController?.close()
         let controller = HistoryFileQuickLookWindowController(references: references, initialIndex: initialIndex)
@@ -4082,7 +4211,7 @@ private final class HistoryPanelSearchClearButton: NSControl {
     }
 }
 
-private final class HistoryPanelResizeHandle: NSView {
+final class HistoryPanelResizeHandle: NSView {
     enum Edge: CaseIterable {
         case left, right, bottom, bottomLeft, bottomRight
 
@@ -4100,6 +4229,8 @@ private final class HistoryPanelResizeHandle: NSView {
 
     private let presentation: HistoryPanelPresentation
     private let edge: Edge
+    private var leadingInsetConstraint: NSLayoutConstraint?
+    private var trailingInsetConstraint: NSLayoutConstraint?
     private var drag: (point: NSPoint, size: NSSize, screenSize: NSSize)?
 
     init(presentation: HistoryPanelPresentation, edge: Edge) {
@@ -4116,9 +4247,13 @@ private final class HistoryPanelResizeHandle: NSView {
         let inset: CGFloat = presentation == .notch ? 10 : 0
         let corner: CGFloat = 20
         if edge == .bottom {
+            let leading = leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: inset + corner)
+            let trailing = trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -inset - corner)
+            leadingInsetConstraint = leading
+            trailingInsetConstraint = trailing
             NSLayoutConstraint.activate([
-                leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: inset + corner),
-                trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -inset - corner),
+                leading,
+                trailing,
                 bottomAnchor.constraint(equalTo: host.bottomAnchor),
                 heightAnchor.constraint(equalToConstant: 10),
             ])
@@ -4127,6 +4262,8 @@ private final class HistoryPanelResizeHandle: NSView {
         let horizontal = edge.isLeft
             ? leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: inset)
             : trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -inset)
+        if edge.isLeft { leadingInsetConstraint = horizontal }
+        else { trailingInsetConstraint = horizontal }
         NSLayoutConstraint.activate([
             horizontal,
             widthAnchor.constraint(equalToConstant: edge.changesHeight ? corner : 10),
@@ -4134,6 +4271,13 @@ private final class HistoryPanelResizeHandle: NSView {
             edge.changesHeight ? heightAnchor.constraint(equalToConstant: corner)
                                : topAnchor.constraint(equalTo: host.topAnchor, constant: 12),
         ])
+    }
+
+    func updateSideInset(_ inset: CGFloat) {
+        let cornerInset: CGFloat = edge == .bottom ? 20 : 0
+        leadingInsetConstraint?.constant = inset + cornerInset
+        trailingInsetConstraint?.constant = -inset - cornerInset
+        window?.invalidateCursorRects(for: self)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -4147,7 +4291,8 @@ private final class HistoryPanelResizeHandle: NSView {
         guard let panel = window as? HistoryFloatingPanel, let screen = panel.screen else { return }
         let screenSize = presentation == .dialog ? screen.visibleFrame.size : screen.frame.size
         guard screenSize.width > 0, screenSize.height > 0 else { return }
-        drag = (NSEvent.mouseLocation, panel.frame.size, screenSize)
+        // Use visible content dimensions, excluding the external screen's top gap.
+        drag = (NSEvent.mouseLocation, superview?.bounds.size ?? panel.frame.size, screenSize)
         panel.isResizingPanel = true
     }
 

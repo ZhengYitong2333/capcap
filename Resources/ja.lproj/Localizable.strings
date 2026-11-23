@@ -767,3 +767,6 @@
 "historyHoverPreviewSizeHint" = "既定の最大サイズに対するプレビューの割合";
 "historyHoverPreviewDelayValue" = "%.1f 秒";
 "historyHoverPreviewSizeValue" = "%d%%";
+
+"historyPanelTransparency" = "背景の透明度";
+"historyPanelTransparencyHint" = "上部バー、履歴パネル、設定の背景に適用し、文字と画像は鮮明に保ちます";

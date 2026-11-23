@@ -767,3 +767,6 @@
 "historyHoverPreviewSizeHint" = "Tỷ lệ bản xem trước so với kích thước tối đa mặc định";
 "historyHoverPreviewDelayValue" = "%.1f giây";
 "historyHoverPreviewSizeValue" = "%d%%";
+
+"historyPanelTransparency" = "Độ trong suốt của nền";
+"historyPanelTransparencyHint" = "Áp dụng cho nền thanh trên cùng, bảng lịch sử và cài đặt, giữ văn bản và hình ảnh rõ nét";
