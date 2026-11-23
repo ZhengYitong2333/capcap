@@ -770,3 +770,5 @@
 
 "historyPanelTransparency" = "背景透明度";
 "historyPanelTransparencyHint" = "同步調整頂部長條、歷史欄和設定背景，文字和圖片保持清晰";
+"historyResetTransparency" = "恢復預設透明度";
+"historyTransparencySystemOverride" = "系統已開啟減少透明度";

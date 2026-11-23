@@ -3,6 +3,13 @@ import XCTest
 @testable import capcap
 
 final class HistoryPanelAppearanceTests: XCTestCase {
+    func testReducedTransparencyOverridesRenderingWithoutChangingStoredChoice() {
+        Defaults.historyPanelTransparencyPercent = 73
+        XCTAssertTrue(AppSurfaceAppearance.palette(transparency: 73, reduceTransparency: true).allSatisfy { $0.alphaComponent == 1 })
+        XCTAssertEqual(Defaults.historyPanelTransparencyPercent, 73)
+        XCTAssertEqual(AppSurfaceAppearance.palette(transparency: 73, reduceTransparency: false)[0].alphaComponent, 0.27, accuracy: 0.001)
+    }
+
     private let key = "historyPanelTransparencyPercent"
     private var originalValue: Any?
 

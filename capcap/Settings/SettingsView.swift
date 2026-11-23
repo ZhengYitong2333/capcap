@@ -101,6 +101,7 @@ class SettingsView: NSView {
     private var historyPanelTransparencyHintLabel: NSTextField?
     private var historyPanelTransparencySlider: NSSlider?
     private var historyPanelTransparencyValueLabel: NSTextField?
+    private var resetTransparencyButton: NSButton?
     private var countdownSlider: SettingsTickSlider!
     private var countdownValueLabel: NSTextField!
     private var countdownTitleLabel: NSTextField!
@@ -455,6 +456,9 @@ class SettingsView: NSView {
         if let gradientLayer { AppSurfaceAppearance.update(gradientLayer) }
         historyPanelTransparencySlider?.integerValue = Defaults.historyPanelTransparencyPercent
         historyPanelTransparencyValueLabel?.stringValue = "\(Defaults.historyPanelTransparencyPercent)%"
+        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        historyPanelTransparencySlider?.isEnabled = !reduced
+        historyPanelTransparencyHintLabel?.stringValue = reduced ? L10n.historyTransparencySystemOverride : L10n.historyPanelTransparencyHint
         historyPanelModePreview?.needsDisplay = true
     }
 
@@ -952,7 +956,7 @@ class SettingsView: NSView {
         let notchAvailable = Defaults.historyPanelNotchAvailable
         let dialogEnabled = on
         let notchEnabled = on && notchAvailable
-        historyPanelTransparencySlider?.isEnabled = true
+        historyPanelTransparencySlider?.isEnabled = !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         historyPanelTransparencyLabel?.textColor = NSColor.white.withAlphaComponent(0.94)
         let mode = selectedHistoryPanelMode()
         historyPanelModePreview?.mode = mode
@@ -1570,6 +1574,11 @@ class SettingsView: NSView {
         historyPanelTransparencyHintLabel = transparencyHint
         inner.addArrangedSubview(transparencyHint)
         transparencyHint.widthAnchor.constraint(equalTo: inner.widthAnchor).isActive = true
+        let reset = NSButton(title: L10n.historyResetTransparency, target: self, action: #selector(resetHistoryTransparency))
+        reset.bezelStyle = .rounded
+        resetTransparencyButton = reset
+        inner.addArrangedSubview(reset)
+        updateSurfaceAppearance()
 
         updateHistoryPanelModeControlsEnabled()
 
@@ -3269,6 +3278,11 @@ class SettingsView: NSView {
         Defaults.clipboardTextCacheEnabled = sender.state == .on
         updateHistoryCacheControlsEnabled()
         updateHistoryPanelModeControlsEnabled()
+    }
+
+    @objc private func resetHistoryTransparency() {
+        Defaults.historyPanelTransparencyPercent = 15
+        updateSurfaceAppearance()
     }
 
     @objc private func historyPanelTransparencyChanged(_ sender: NSSlider) {
@@ -5454,7 +5468,8 @@ class SettingsView: NSView {
         imageCacheSizePopup?.setAccessibilityLabel(L10n.imageCacheSizeLabel)
         historyPanelDisplayModeTitleLabel?.stringValue = L10n.historyPanelDisplayModeLabel
         historyPanelTransparencyLabel?.stringValue = L10n.historyPanelTransparency
-        historyPanelTransparencyHintLabel?.stringValue = L10n.historyPanelTransparencyHint
+        resetTransparencyButton?.title = L10n.historyResetTransparency
+        updateSurfaceAppearance()
         historyPanelTransparencySlider?.setAccessibilityLabel(L10n.historyPanelTransparency)
         historyPanelDisplayModeHintLabel?.stringValue = L10n.historyPanelDisplayModeHint
         historyPanelDialogModeTitleLabel?.stringValue = L10n.historyPanelDialogMode
