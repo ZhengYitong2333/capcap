@@ -25,6 +25,7 @@ final class HotkeyManager {
     private var colorPickerHotKeyRef: EventHotKeyRef?
     private var historyPanelHotKeyRef: EventHotKeyRef?
     private var historyPreviewHotKeyRef: EventHotKeyRef?
+    private var historyPreviewOwner: UUID?
     private var callback: ((CaptureTriggerContext) -> Void)?
     private var countdownCallback: (() -> Void)?
     private var quickPinCallback: (() -> Void)?
@@ -85,7 +86,7 @@ final class HotkeyManager {
         unregisterFullScreenScreenshot()
         unregisterColorPicker()
         unregisterHistoryPanel()
-        unregisterHistoryPreview()
+        clearHistoryPreviewRegistration()
         if let handler = eventHandlerRef {
             RemoveEventHandler(handler)
             eventHandlerRef = nil
@@ -548,9 +549,8 @@ final class HotkeyManager {
     /// hovered. Carbon hotkeys work even though the history panel intentionally
     /// remains a non-activating panel.
     @discardableResult
-    func registerHistoryPreview(callback: @escaping () -> Void) -> Bool {
-        unregisterHistoryPreview()
-        historyPreviewCallback = callback
+    func registerHistoryPreview(owner: UUID, callback: @escaping () -> Void) -> Bool {
+        clearHistoryPreviewRegistration()
         installEventHandlerIfNeeded()
         var ref: EventHotKeyRef?
         let id = EventHotKeyID(signature: Self.regularHotKeySignature, id: Self.historyPreviewHotKeyID)
@@ -560,17 +560,25 @@ final class HotkeyManager {
         )
         if status == noErr, let ref {
             historyPreviewHotKeyRef = ref
+            historyPreviewOwner = owner
+            historyPreviewCallback = callback
             return true
         }
-        historyPreviewCallback = nil
         return false
     }
 
-    func unregisterHistoryPreview() {
+    func unregisterHistoryPreview(owner: UUID) {
+        // A different screen may have taken over before this panel collapses.
+        guard historyPreviewOwner == owner else { return }
+        clearHistoryPreviewRegistration()
+    }
+
+    private func clearHistoryPreviewRegistration() {
         if let ref = historyPreviewHotKeyRef {
             UnregisterEventHotKey(ref)
             historyPreviewHotKeyRef = nil
         }
+        historyPreviewOwner = nil
         historyPreviewCallback = nil
     }
 

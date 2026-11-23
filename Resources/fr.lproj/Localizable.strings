@@ -767,3 +767,6 @@
 "historyHoverPreviewSizeHint" = "Échelle de l’aperçu en pourcentage de la taille maximale par défaut";
 "historyHoverPreviewDelayValue" = "%.1f s";
 "historyHoverPreviewSizeValue" = "%d%%";
+
+"historyPanelTransparency" = "Transparence de l’arrière-plan";
+"historyPanelTransparencyHint" = "Applique la transparence aux fonds de la barre supérieure, de l’historique et des réglages, sans altérer le texte ni les images";

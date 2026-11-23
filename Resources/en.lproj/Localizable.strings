@@ -767,3 +767,6 @@
 "historyHoverPreviewSizeHint" = "Preview scale as a percentage of the default maximum";
 "historyHoverPreviewDelayValue" = "%.1f s";
 "historyHoverPreviewSizeValue" = "%d%%";
+
+"historyPanelTransparency" = "Background transparency";
+"historyPanelTransparencyHint" = "Applies to the top strip, history panel and settings background, keeping text and images clear";
