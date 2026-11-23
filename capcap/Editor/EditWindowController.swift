@@ -2400,6 +2400,11 @@ class EditWindowController {
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
+        // NSSavePanel ignores a directory URL that does not exist yet. Prepare
+        // the new nested default on first use; the chooser still lets the user
+        // pick another location if this directory cannot be created.
+        try? FileManager.default.createDirectory(at: Defaults.screenshotSaveDirectory,
+                                                 withIntermediateDirectories: true)
         panel.directoryURL = Defaults.screenshotSaveDirectory
         panel.nameFieldStringValue = suggestedName
 

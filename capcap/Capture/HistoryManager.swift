@@ -542,7 +542,8 @@ final class HistoryManager {
     private func recordingDirectoriesToScan() -> [URL] {
         var directories: [URL] = []
         var seen = Set<String>()
-        for directory in [Defaults.recordingSaveDirectory, Defaults.defaultRecordingSaveDirectory] {
+        for directory in [Defaults.recordingSaveDirectory, Defaults.defaultRecordingSaveDirectory,
+                          Defaults.legacyRecordingSaveDirectory] {
             let normalized = directory.standardizedFileURL
             guard seen.insert(normalized.path).inserted else { continue }
             directories.append(normalized)

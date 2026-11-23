@@ -3200,14 +3200,13 @@ class SettingsView: NSView {
     }
 
     private func directoryURLForPanel(_ url: URL) -> URL {
-        if FileManager.default.fileExists(atPath: url.path) {
-            return url
+        var candidate = url.standardizedFileURL
+        while !FileManager.default.fileExists(atPath: candidate.path) {
+            let parent = candidate.deletingLastPathComponent()
+            guard parent != candidate else { break }
+            candidate = parent
         }
-        let parent = url.deletingLastPathComponent()
-        if FileManager.default.fileExists(atPath: parent.path) {
-            return parent
-        }
-        return Defaults.defaultScreenshotSaveDirectory.deletingLastPathComponent()
+        return candidate
     }
 
     private func revealSaveDirectory(_ url: URL) {
