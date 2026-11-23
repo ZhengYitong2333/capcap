@@ -5324,6 +5324,15 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
         let dy = point.y - mouseDownPoint.y
         guard hypot(dx, dy) > 4 else { return }
         didStartDrag = true
+        if case .text(let content) = entry.kind {
+            let text = content.value
+            guard let payload = HistoryTextDrag.pasteboardItem(for: text) else { return }
+            let preview = HistoryTextDrag.preview(for: text)
+            let item = NSDraggingItem(pasteboardWriter: payload)
+            item.setDraggingFrame(draggingFrame(for: preview), contents: preview)
+            beginDraggingSession(with: [item], event: event, source: self)
+            return
+        }
         let draggedEntries = dragEntriesProvider?(self) ?? [entry]
         let draggableEntries = draggedEntries.filter { Self.supportsDrag($0) }
         guard !draggableEntries.isEmpty else { return }
@@ -5466,9 +5475,9 @@ private final class HistoryPanelTileView: NSView, NSDraggingSource {
 
     private static func supportsDrag(_ entry: HistoryEntry) -> Bool {
         switch entry.kind {
-        case .color, .text:
+        case .color:
             return false
-        case .image, .video, .files:
+        case .image, .video, .files, .text:
             return true
         }
     }
