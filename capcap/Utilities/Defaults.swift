@@ -78,6 +78,7 @@ extension Notification.Name {
     static let historyDidUpdate = Notification.Name("capcap.historyDidUpdate")
     static let recordingSaveDirectoryDidChange = Notification.Name("capcap.recordingSaveDirectoryDidChange")
     static let historyPanelSizeDidChange = Notification.Name("capcap.historyPanelSizeDidChange")
+    static let historyPanelAppearanceDidChange = Notification.Name("capcap.historyPanelAppearanceDidChange")
     static let historyCardSizeDidChange = Notification.Name("capcap.historyCardSizeDidChange")
     static let historyPanelDisplayModesDidChange = Notification.Name("capcap.historyPanelDisplayModesDidChange")
     static let hotkeyDidChange = Notification.Name("capcap.hotkeyDidChange")
@@ -120,6 +121,8 @@ enum L10n {
 
     static var historyPanelDisplayModeLabel: String { s("historyPanelDisplayModeLabel") }
     static var historyPanelDisplayModeHint: String { s("historyPanelDisplayModeHint") }
+    static var historyPanelTransparency: String { s("historyPanelTransparency") }
+    static var historyPanelTransparencyHint: String { s("historyPanelTransparencyHint") }
     static var historyPanelDialogMode: String { s("historyPanelDialogMode") }
     static var historyPanelDialogModeHint: String { s("historyPanelDialogModeHint") }
     static var historyPanelNotchMode: String { s("historyPanelNotchMode") }
@@ -2405,6 +2408,20 @@ struct Defaults {
     }
 
     static let defaultHistoryPanelWidthFraction: CGFloat = 0.88
+
+    static let historyPanelTransparencyRange = 0...100
+    static var historyPanelTransparencyPercent: Int {
+        get {
+            let saved = defaults.object(forKey: "historyPanelTransparencyPercent") as? Int ?? 15
+            return min(historyPanelTransparencyRange.upperBound, max(historyPanelTransparencyRange.lowerBound, saved))
+        }
+        set {
+            let value = min(historyPanelTransparencyRange.upperBound, max(historyPanelTransparencyRange.lowerBound, newValue))
+            guard value != historyPanelTransparencyPercent else { return }
+            defaults.set(value, forKey: "historyPanelTransparencyPercent")
+            NotificationCenter.default.post(name: .historyPanelAppearanceDidChange, object: nil)
+        }
+    }
 
     static var historyPanelWidthFraction: CGFloat {
         let saved = defaults.double(forKey: "historyPanelWidthFraction")

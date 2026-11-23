@@ -767,3 +767,6 @@
 "historyHoverPreviewSizeHint" = "기본 최대 크기 대비 미리보기 크기 비율";
 "historyHoverPreviewDelayValue" = "%.1f초";
 "historyHoverPreviewSizeValue" = "%d%%";
+
+"historyPanelTransparency" = "배경 투명도";
+"historyPanelTransparencyHint" = "상단 막대, 기록 패널, 설정 배경에 적용하며 텍스트와 이미지는 선명하게 유지";

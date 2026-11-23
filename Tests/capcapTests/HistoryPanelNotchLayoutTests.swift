@@ -2,6 +2,30 @@ import XCTest
 @testable import capcap
 
 final class HistoryPanelNotchLayoutTests: XCTestCase {
+    func testExternalScreenUsesThinStripInsteadOfNotchSizedBlock() {
+        let geometry = HistoryNotchGeometry(
+            notchWidth: 200, notchHeight: 24, screenWidth: 2560,
+            notchLeadingX: 1180, hasPhysicalNotch: false
+        )
+        let strip = geometry.collapsedSize
+
+        XCTAssertGreaterThanOrEqual(strip.width, 120)
+        XCTAssertLessThanOrEqual(strip.height, 6)
+        XCTAssertGreaterThanOrEqual(strip.width / strip.height, 20)
+        XCTAssertLessThanOrEqual(strip.height + geometry.topInset, 12)
+        XCTAssertGreaterThan(geometry.topInset, 0)
+    }
+
+    func testPhysicalNotchEntryKeepsHardwareDimensions() {
+        let geometry = HistoryNotchGeometry(
+            notchWidth: 210, notchHeight: 32, screenWidth: 1512,
+            notchLeadingX: 651
+        )
+
+        XCTAssertEqual(geometry.collapsedSize, NSSize(width: 210, height: 32))
+        XCTAssertEqual(geometry.topInset, 0)
+    }
+
     func testFilterViewportEndsAtPhysicalNotchLeadingEdge() {
         let geometry = HistoryNotchGeometry(
             notchWidth: 210,
