@@ -1471,11 +1471,18 @@ struct Defaults {
     }
 
     static var defaultRecordingSaveDirectory: URL {
+        defaultDocumentsDirectory.appendingPathComponent("capcap", isDirectory: true)
+            .appendingPathComponent("record", isDirectory: true)
+    }
+
+    /// Keep existing recordings visible in history after changing the default.
+    static var legacyRecordingSaveDirectory: URL {
         defaultDocumentsDirectory.appendingPathComponent("record", isDirectory: true)
     }
 
     static var defaultScreenshotSaveDirectory: URL {
-        defaultDocumentsDirectory.appendingPathComponent("screenshots", isDirectory: true)
+        defaultDocumentsDirectory.appendingPathComponent("capcap", isDirectory: true)
+            .appendingPathComponent("screenshots", isDirectory: true)
     }
 
     static var recordingSaveDirectory: URL {
