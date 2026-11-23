@@ -1,132 +1,95 @@
 import AppKit
 
-/// Everything the size popover needs for the currently active annotation tool.
-struct SizeControlConfiguration {
-    let title: String
-    let detail: String?
-    let minimum: CGFloat
-    let maximum: CGFloat
-    let currentValue: CGFloat
-    let presets: [CGFloat]
-}
-
-/// Compact popover content for adjusting the active tool's line width, badge
-/// size, font size, or mosaic strength. Preset chips and the slider both report
-/// through the same began/changed/ended callbacks so drags stay one undo step.
+/// Adjusts the shared toolbar scale without changing annotation state or undo.
 final class SizeControlPopoverView: NSView {
     static let preferredSize = NSSize(width: 292, height: 118)
 
-    var onEditingBegan: (() -> Void)?
-    var onValueChanged: ((CGFloat) -> Void)?
-    var onEditingEnded: (() -> Void)?
-
     private let titleLabel = NSTextField(labelWithString: "")
-    private let detailLabel = NSTextField(labelWithString: "")
+    private let valueLabel = NSTextField(labelWithString: "")
     private let slider: HUDSlider
     private var chips: [SizePresetChip] = []
-    private var isEditing = false
 
-    init(configuration: SizeControlConfiguration) {
+    init() {
         slider = HUDSlider(
             frame: .zero,
-            value: Double(configuration.currentValue),
-            minValue: Double(configuration.minimum),
-            maxValue: Double(configuration.maximum),
+            value: Double(Defaults.toolbarSizePercent),
+            minValue: Double(Defaults.toolbarSizeRange.lowerBound),
+            maxValue: Double(Defaults.toolbarSizeRange.upperBound),
             target: nil,
             action: nil
         )
         super.init(frame: NSRect(origin: .zero, size: Self.preferredSize))
         wantsLayer = true
-
-        titleLabel.stringValue = configuration.title
         titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         titleLabel.textColor = .labelColor
         addSubview(titleLabel)
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.alignment = .right
+        addSubview(valueLabel)
 
-        if let detail = configuration.detail, !detail.isEmpty {
-            detailLabel.stringValue = detail
-            detailLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-            detailLabel.textColor = .secondaryLabelColor
-            detailLabel.alignment = .right
-            addSubview(detailLabel)
-        }
-
-        for value in configuration.presets {
+        for value: CGFloat in [75, 100, 125, 150, 200] {
             let chip = SizePresetChip(value: value)
-            chip.onPress = { [weak self] value in self?.selectPreset(value) }
+            chip.onPress = { [weak self] value in self?.setScale(value) }
             chips.append(chip)
             addSubview(chip)
         }
-
         slider.isContinuous = true
-        slider.onEditingBegan = { [weak self] in self?.beginEditing() }
-        slider.onEditingEnded = { [weak self] in self?.endEditing() }
+        slider.keyboardStep = Double(Defaults.toolbarSizeStep)
         slider.target = self
         slider.action = #selector(sliderChanged)
         addSubview(slider)
-
-        updateSelectedChip(configuration.currentValue)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncScale),
+                                               name: .toolbarSizeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateLocalization),
+                                               name: .languageDidChange, object: nil)
+        updateLocalization()
+        syncScale()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit { NotificationCenter.default.removeObserver(self) }
+
     override func layout() {
         super.layout()
         let padding: CGFloat = 16
         let contentWidth = max(1, bounds.width - padding * 2)
         let titleY = bounds.height - padding - 18
-        titleLabel.frame = NSRect(x: padding, y: titleY, width: contentWidth, height: 18)
-        detailLabel.frame = NSRect(x: padding, y: titleY + 2, width: contentWidth, height: 14)
-
+        titleLabel.frame = NSRect(x: padding, y: titleY, width: contentWidth - 60, height: 18)
+        valueLabel.frame = NSRect(x: bounds.width - padding - 60, y: titleY, width: 60, height: 18)
         let chipHeight: CGFloat = 22
         let chipY = titleY - 10 - chipHeight
-        if !chips.isEmpty {
-            let gap: CGFloat = 6
-            let available = contentWidth - gap * CGFloat(chips.count - 1)
-            let chipWidth = max(24, available / CGFloat(chips.count))
-            var x = padding
-            for chip in chips {
-                chip.frame = NSRect(x: x, y: chipY, width: chipWidth, height: chipHeight)
-                x += chipWidth + gap
-            }
+        let gap: CGFloat = 6
+        let chipWidth = (contentWidth - gap * CGFloat(chips.count - 1)) / CGFloat(chips.count)
+        for (index, chip) in chips.enumerated() {
+            chip.frame = NSRect(x: padding + CGFloat(index) * (chipWidth + gap),
+                                y: chipY, width: chipWidth, height: chipHeight)
         }
-
-        let sliderY = chipY - 8 - HUDSlider.preferredHeight
-        slider.frame = NSRect(x: padding, y: sliderY, width: contentWidth, height: HUDSlider.preferredHeight)
+        slider.frame = NSRect(x: padding, y: chipY - 8 - HUDSlider.preferredHeight,
+                              width: contentWidth, height: HUDSlider.preferredHeight)
     }
 
-    @objc private func sliderChanged() {
-        let value = CGFloat(slider.doubleValue)
-        updateSelectedChip(value)
-        onValueChanged?(value)
+    @objc private func updateLocalization() {
+        titleLabel.stringValue = L10n.toolbarSize
+        slider.setAccessibilityLabel(L10n.toolbarSize)
     }
 
-    private func selectPreset(_ value: CGFloat) {
-        beginEditing()
+    @objc private func sliderChanged() { setScale(CGFloat(slider.doubleValue)) }
+
+    private func setScale(_ value: CGFloat) {
+        // Defaults normalizes both settings and popover edits to the same step.
+        Defaults.toolbarSizePercent = Int(value.rounded())
+        syncScale()
+    }
+
+    @objc private func syncScale() {
+        let value = Defaults.toolbarSizePercent
         slider.doubleValue = Double(value)
-        updateSelectedChip(value)
-        onValueChanged?(value)
-        endEditing()
-    }
-
-    private func beginEditing() {
-        guard !isEditing else { return }
-        isEditing = true
-        onEditingBegan?()
-    }
-
-    private func endEditing() {
-        guard isEditing else { return }
-        isEditing = false
-        onEditingEnded?()
-    }
-
-    private func updateSelectedChip(_ value: CGFloat) {
-        for chip in chips {
-            chip.isSelected = abs(chip.sizeValue - value) < 0.001
-        }
+        valueLabel.stringValue = "\(value)%"
+        for chip in chips { chip.isSelected = Int(chip.sizeValue) == value }
     }
 }
 
@@ -191,6 +154,6 @@ private final class SizePresetChip: NSButton {
     }
 
     private static func format(_ value: CGFloat) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        "\(Int(value))%"
     }
 }

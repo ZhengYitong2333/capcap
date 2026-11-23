@@ -105,7 +105,7 @@ extension ToolbarItemID {
         case .emoji:         return "face.smiling"
         case .insertImage:   return "photo"
         case .colorPicker:   return "eyedropper"
-        case .sizeControl:   return "lineweight"
+        case .sizeControl:   return "slider.horizontal.3"
         case .undo:          return "arrow.uturn.backward"
         case .redo:          return "arrow.uturn.forward"
         case .moveSelection: return "arrow.up.and.down.and.arrow.left.and.right"
@@ -155,7 +155,7 @@ extension ToolbarItemID {
         case .emoji:         return L10n.tipEmoji
         case .insertImage:   return L10n.tipInsertImage
         case .colorPicker:   return L10n.tipColorPicker
-        case .sizeControl:   return L10n.tipSizeControl
+        case .sizeControl:   return L10n.toolbarSize
         case .undo:          return L10n.tipUndo
         case .redo:          return L10n.tipRedo
         case .moveSelection: return L10n.tipMoveSelection

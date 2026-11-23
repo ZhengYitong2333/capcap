@@ -152,6 +152,7 @@ class EditWindowController {
     private var canvasScrollView: EditorScrollView?
     private var selectionChromeOverlay: SelectionChromeOverlay?
     private weak var hostSelectionView: SelectionView?
+    private var toolbarSizeObserver: NSObjectProtocol?
     private var toolbarView: ToolbarView?
     /// Optional vertical toolbar on the left/right of the selection. Created
     /// only when the user has assigned tools to it in settings.
@@ -350,6 +351,17 @@ class EditWindowController {
         self.onRequestFocusReturn = onRequestFocusReturn
         self.onComplete = onComplete
         self.pickedColorSwatch = Self.color(fromHex: Defaults.lastPickedColorHex)
+        toolbarSizeObserver = NotificationCenter.default.addObserver(
+            forName: .toolbarSizeDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.repositionFloatingChrome()
+        }
+    }
+
+    deinit {
+        if let toolbarSizeObserver {
+            NotificationCenter.default.removeObserver(toolbarSizeObserver)
+        }
     }
 
     func attachWindowCapturePreparation(_ preparation: WindowCapturePreparation?) {
@@ -498,7 +510,6 @@ class EditWindowController {
 
         positionToolbars(in: hostSelectionView.bounds)
         updateCaptureActionAvailability()
-        updateSizeControlAvailability()
     }
 
     /// Injects the controller's action callbacks into a toolbar. Both the
@@ -769,7 +780,6 @@ class EditWindowController {
         updateEditorInteractionState()
 
         showSubToolbar(for: tool)
-        updateSizeControlAvailability()
 
         // Restore focus to the overlay window after toolbar interaction so
         // keyboard input no longer falls through to the captured app.
@@ -1275,85 +1285,6 @@ class EditWindowController {
 
     // MARK: - Size control
 
-    private func supportsSizeControl(_ tool: EditTool) -> Bool {
-        switch tool {
-        case .pen, .line, .arrow, .rectangle, .ellipse, .magnifier, .marker, .numbered, .text, .mosaic:
-            return true
-        case .none, .spotlight, .eraser, .emoji, .scrollCapture:
-            return false
-        }
-    }
-
-    private func updateSizeControlAvailability() {
-        let enabled = supportsSizeControl(activeTool)
-        toolbars.forEach { $0.setEnabled(enabled, for: .sizeControl) }
-        if !enabled {
-            dismissSizeControlPopover()
-        }
-    }
-
-    private func sizeControlConfiguration() -> SizeControlConfiguration? {
-        switch activeTool {
-        case .pen, .line, .arrow, .rectangle, .ellipse, .magnifier:
-            return SizeControlConfiguration(
-                title: L10n.tipSizeControl,
-                detail: nil,
-                minimum: CGFloat(Defaults.editorLineWidthMin),
-                maximum: CGFloat(Defaults.editorLineWidthMax),
-                currentValue: currentLineWidth,
-                presets: [2, 4, 6, 8, 12, 16]
-            )
-        case .marker:
-            return SizeControlConfiguration(
-                title: L10n.tipSizeControl,
-                detail: nil,
-                minimum: CGFloat(Defaults.editorLineWidthMin),
-                maximum: CGFloat(Defaults.markerLineWidthMax),
-                currentValue: currentMarkerLineWidth,
-                presets: [1, 3, 5, 8, 10]
-            )
-        case .numbered:
-            return SizeControlConfiguration(
-                title: L10n.tipSizeControl,
-                detail: nil,
-                minimum: CGFloat(Defaults.numberSizeMin),
-                maximum: CGFloat(Defaults.numberSizeMax),
-                currentValue: currentNumberSize,
-                presets: [1, 3, 5, 8, 12, 16, 20, 25]
-            )
-        case .text:
-            return SizeControlConfiguration(
-                title: L10n.tipSizeControl,
-                detail: nil,
-                minimum: 10,
-                maximum: 100,
-                currentValue: currentFontSize,
-                presets: [10, 12, 16, 20, 24, 32, 48, 64]
-            )
-        case .mosaic:
-            if currentMosaicStyle == .blur {
-                return SizeControlConfiguration(
-                    title: L10n.tipSizeControl,
-                    detail: L10n.mosaicBlurAmount,
-                    minimum: CGFloat(Defaults.mosaicBlurRadiusMin),
-                    maximum: CGFloat(Defaults.mosaicBlurRadiusMax),
-                    currentValue: currentMosaicBlurRadius,
-                    presets: [1, 4, 8, 12, 16, 24, 48]
-                )
-            }
-            return SizeControlConfiguration(
-                title: L10n.tipSizeControl,
-                detail: L10n.mosaicGranularity,
-                minimum: CGFloat(Defaults.mosaicBlockSizeMin),
-                maximum: CGFloat(Defaults.mosaicBlockSizeMax),
-                currentValue: currentMosaicBlockSize,
-                presets: [4, 8, 12, 16, 24, 32, 48]
-            )
-        case .none, .spotlight, .eraser, .emoji, .scrollCapture:
-            return nil
-        }
-    }
-
     private func showSizeControlPopover() {
         if let existing = sizeControlPopover {
             sizeControlPopover = nil
@@ -1363,22 +1294,12 @@ class EditWindowController {
             }
         }
         guard let hostSelectionView,
-              let configuration = sizeControlConfiguration(),
               let anchor = sizeControlAnchor(in: hostSelectionView) else { return }
 
         dismissEmojiPopover()
         dismissBeautifyPresetPopover()
 
-        let view = SizeControlPopoverView(configuration: configuration)
-        view.onEditingBegan = { [weak self] in
-            self?.canvasView?.beginSelectionAdjustment()
-        }
-        view.onValueChanged = { [weak self] value in
-            self?.applySizeControlValue(value)
-        }
-        view.onEditingEnded = { [weak self] in
-            self?.canvasView?.commitSelectionAdjustment()
-        }
+        let view = SizeControlPopoverView()
 
         let viewController = NSViewController()
         viewController.view = view
@@ -1412,53 +1333,10 @@ class EditWindowController {
         return nil
     }
 
-    private func applySizeControlValue(_ value: CGFloat) {
-        switch activeTool {
-        case .pen, .line, .arrow, .rectangle, .ellipse, .magnifier:
-            setCurrentDrawingLineWidth(value)
-            canvasView?.mutateSelectedAnnotationLive { $0.withLineWidth(value) }
-        case .marker:
-            setCurrentMarkerLineWidth(value)
-            canvasView?.mutateSelectedAnnotationLive { $0.withLineWidth(value) }
-        case .numbered:
-            setCurrentNumberSize(value)
-            canvasView?.mutateSelectedAnnotationLive { $0.withLineWidth(value) }
-        case .text:
-            setCurrentTextFontSize(value)
-            canvasView?.mutateSelectedAnnotationLive { $0.withFontSize(value) }
-        case .mosaic:
-            setCurrentMosaicSize(value)
-            canvasView?.mutateSelectedMosaicLive(
-                style: currentMosaicStyle,
-                blockSize: currentMosaicBlockSize,
-                blurRadius: currentMosaicBlurRadius
-            )
-        case .none, .spotlight, .eraser, .emoji, .scrollCapture:
-            break
-        }
-    }
-
     private func setCurrentTextFontSize(_ size: CGFloat) {
         currentFontSize = size
         canvasView?.currentFontSize = size
         Defaults.lastTextFontSize = Double(size)
-    }
-
-    private func setCurrentMosaicSize(_ size: CGFloat) {
-        switch currentMosaicStyle {
-        case .pixelate:
-            let clamped = min(max(size, CGFloat(Defaults.mosaicBlockSizeMin)),
-                              CGFloat(Defaults.mosaicBlockSizeMax))
-            currentMosaicBlockSize = clamped
-            canvasView?.currentMosaicBlockSize = clamped
-            Defaults.mosaicBlockSize = Double(clamped)
-        case .blur:
-            let clamped = min(max(size, CGFloat(Defaults.mosaicBlurRadiusMin)),
-                              CGFloat(Defaults.mosaicBlurRadiusMax))
-            currentMosaicBlurRadius = clamped
-            canvasView?.currentMosaicBlurRadius = clamped
-            Defaults.mosaicBlurRadius = Double(clamped)
-        }
     }
 
     private func promoteRecentEmoji(_ emoji: String) {
@@ -3485,7 +3363,12 @@ class ToolbarView: NSView {
         }
     }
 
-    private let requestedScale = Defaults.toolbarScale
+    private var requestedScale: CGFloat { Defaults.toolbarScale }
+    private var renderedIconScale: CGFloat = 1
+
+    private var displayScale: CGFloat {
+        min(bounds.width / preferredSize.width, bounds.height / preferredSize.height)
+    }
 
     func scaledSize(fitting available: NSSize) -> NSSize {
         let logical = preferredSize
@@ -3496,8 +3379,41 @@ class ToolbarView: NSView {
 
     func place(in rect: NSRect) {
         frame = rect
-        // Keep button drawing, hit testing and popover anchors in the same logical coordinates.
-        bounds = NSRect(origin: .zero, size: preferredSize)
+        // Keep view points equal to screen points. Enlarging a layer-backed
+        // view through its bounds stretches the old icon backing bitmap.
+        bounds = NSRect(origin: .zero, size: rect.size)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        needsDisplay = true
+    }
+
+    override func layout() {
+        super.layout()
+        let scale = displayScale
+        let size = Self.buttonSize * scale
+        let step = (Self.buttonSize + Self.buttonSpacing) * scale
+        for (index, id) in items.enumerated() {
+            guard let button = buttons[id] else { continue }
+            let along = Self.endPadding * scale + CGFloat(index) * step
+            switch orientation {
+            case .horizontal:
+                button.frame = NSRect(x: along, y: Self.crossPadding * scale, width: size, height: size)
+            case .vertical:
+                button.frame = NSRect(x: Self.crossPadding * scale,
+                                      y: bounds.height - along - size, width: size, height: size)
+            }
+            button.bounds = NSRect(origin: .zero, size: button.frame.size)
+            if let toolButton = button as? ToolButton {
+                toolButton.drawingScale = scale
+                if renderedIconScale != scale {
+                    let pointSize = Self.symbolPointSize * scale
+                    toolButton.configureImage(symbolName: id.symbolName, pointSize: pointSize,
+                                              iconImage: id.iconImage(pointSize: pointSize))
+                }
+            }
+            button.needsDisplay = true
+        }
+        renderedIconScale = scale
     }
 
     var onItemTriggered: ((ToolbarItemID) -> Void)?
@@ -3618,7 +3534,9 @@ class ToolbarView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8)
+        let scale = displayScale
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2 * scale, dy: 2 * scale),
+                                xRadius: 8 * scale, yRadius: 8 * scale)
         AdaptiveChrome.toolbarBackground.setFill()
         path.fill()
     }
@@ -3634,6 +3552,7 @@ class ToolbarView: NSView {
 // MARK: - Tool Button
 
 class ToolButton: NSButton {
+    var drawingScale: CGFloat = 1
     var isSelected = false {
         didSet { needsDisplay = true }
     }
@@ -3654,17 +3573,23 @@ class ToolButton: NSButton {
         isBordered = false
         setButtonType(.momentaryPushIn)
 
+        configureImage(symbolName: symbolName, pointSize: symbolPointSize, iconImage: iconImage)
+
+        contentTintColor = normalColor
+        wantsLayer = true
+    }
+
+    func configureImage(symbolName: String, pointSize: CGFloat, iconImage: NSImage?) {
         if let iconImage {
             image = iconImage
         } else if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .medium)
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
             // Keep the text tool's Aa glyph independent of the system language.
             let localizedImage = symbolName == "textformat" ? img.withLocale(Locale(identifier: "en")) : img
             image = localizedImage.withSymbolConfiguration(config)
         }
 
-        contentTintColor = normalColor
-        wantsLayer = true
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) {
@@ -3714,7 +3639,8 @@ class ToolButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         if isSelected {
             contentTintColor = selectedColor
-            let bgPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6)
+            let bgPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 2 * drawingScale, dy: 2 * drawingScale),
+                                      xRadius: 6 * drawingScale, yRadius: 6 * drawingScale)
             AdaptiveChrome.selectedFill.setFill()
             bgPath.fill()
         } else {
@@ -3838,14 +3764,16 @@ final class MoveSelectionDragHandle: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let scale = bounds.width / ToolbarView.buttonSize
         if isPressed {
-            let bg = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6)
+            let bg = NSBezierPath(roundedRect: bounds.insetBy(dx: 2 * scale, dy: 2 * scale),
+                                  xRadius: 6 * scale, yRadius: 6 * scale)
             AdaptiveChrome.selectedFill.setFill()
             bg.fill()
         }
 
         let symbolName = "arrow.up.and.down.and.arrow.left.and.right"
-        let config = NSImage.SymbolConfiguration(pointSize: ToolbarView.symbolPointSize, weight: .medium)
+        let config = NSImage.SymbolConfiguration(pointSize: ToolbarView.symbolPointSize * scale, weight: .medium)
         guard let img = NSImage(
             systemSymbolName: symbolName,
             accessibilityDescription: "Move selection"
@@ -5690,6 +5618,7 @@ private class ColorSwatchView: NSView {
 final class HUDSlider: NSControl {
     var minValue: Double
     var maxValue: Double
+    var keyboardStep: Double?
     var onEditingBegan: (() -> Void)?
     var onEditingEnded: (() -> Void)?
 
@@ -5836,8 +5765,8 @@ final class HUDSlider: NSControl {
 
     override func keyDown(with event: NSEvent) {
         guard isEnabled else { return }
-        let fineStep = max((maxValue - minValue) / 100, 0.1)
-        let coarseStep = max((maxValue - minValue) / 20, fineStep)
+        let fineStep = keyboardStep ?? max((maxValue - minValue) / 100, 0.1)
+        let coarseStep = keyboardStep.map { $0 * 5 } ?? max((maxValue - minValue) / 20, fineStep)
         let step = event.modifierFlags.contains(.shift) ? coarseStep : fineStep
         switch Int(event.keyCode) {
         case kVK_LeftArrow, kVK_DownArrow:
