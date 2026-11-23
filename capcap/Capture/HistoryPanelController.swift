@@ -1244,6 +1244,25 @@ enum HistoryPanelFilter: CaseIterable, Equatable {
 }
 
 final class HistoryPanelScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        // Trackpads and smooth-scrolling mice already send pixel deltas and
+        // momentum phases. Keep AppKit's native handling for those devices.
+        guard !event.hasPreciseScrollingDeltas, let documentView else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        // A wheel sends line deltas, usually on Y even for this horizontal row.
+        // Honor an explicit X delta (including Shift-wheel) without adding Y twice.
+        let delta = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.scrollingDeltaY
+        guard delta != 0 else { return }
+        let maximumX = max(0, documentView.frame.width - contentView.bounds.width)
+        let targetX = min(maximumX, max(0, contentView.bounds.minX - delta * 48))
+        guard targetX != contentView.bounds.minX else { return }
+        contentView.scroll(to: NSPoint(x: targetX, y: contentView.bounds.minY))
+        reflectScrolledClipView(contentView)
+    }
+
     // NSCollectionView enables the horizontal scroller when its flow layout is
     // attached. Hiding that scroller still reserves 17 points in legacy mode,
     // making the clip view shorter than the cards. Keep it disabled at the
