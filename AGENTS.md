@@ -23,17 +23,25 @@ first build. Without that identity, `scripts/bundle.sh` falls back to ad-hoc
 signing, and macOS TCC asks for Screen Recording / Accessibility again after
 every rebuild. CI releases read the same certificate from repository secrets.
 
-Do not run `scripts/compile-check.sh`, `swift test`, other test commands, or
-interactive UI checks unless the user explicitly requests testing or UI
-verification. Launching the app confirms startup only; do not claim that the
-changed behavior was tested. After the app starts, hand off the result.
+Development and fixes include verification appropriate to the changed behavior
+without requiring a separate testing request. Prefer focused regression tests
+for logic and targeted interactive checks for hover, focus, multi-window,
+scaling, and other behavior that automated tests cannot establish. Reuse existing
+checks, avoid unrelated full-suite runs, and do not add elaborate test machinery
+for a small change. Broaden verification only when failures or unresolved risks
+justify it.
 
-## Interactive UI Testing (Only When Explicitly Requested)
+Building and launching confirm compilation and startup only. Before handing off,
+distinguish implemented changes from verified behavior. If an environment or tool
+limitation prevents necessary verification, state the uncovered scenario and the
+remaining check; do not describe it as passed.
+
+## Interactive UI Testing
 
 capcap is an `LSUIElement` menu-bar app, so the macOS frontmost application is
 often ChatGPT, Terminal, Finder, or another unrelated app even while a capcap
 panel is visible. Do not infer the UI automation target from the frontmost app.
-If the user explicitly requests interactive UI testing, use this workflow:
+When interactive verification is needed for the change, use this workflow:
 
 1. Ensure the installed app matches the current source and resources, following
    Build & Run above. Reuse an already current build.
@@ -68,7 +76,7 @@ Follow Build & Run, use the hook only to isolate the relevant behavior,
 then remove it before final verification.
 Search for the unique hook name afterward so temporary test code cannot ship.
 
-When interactive UI testing is explicitly requested, final verification must
+When performing interactive UI testing, final verification must
 use the clean installed app after all debug hooks have been removed, following
 Build & Run above. Reuse checks only if they cover this final state. Treat
 incomplete Computer Use observations as a limitation, not as proof that an
