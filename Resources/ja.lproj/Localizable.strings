@@ -770,3 +770,5 @@
 
 "historyPanelTransparency" = "背景の透明度";
 "historyPanelTransparencyHint" = "上部バー、履歴パネル、設定の背景に適用し、文字と画像は鮮明に保ちます";
+"historyResetTransparency" = "透明度を初期値に戻す";
+"historyTransparencySystemOverride" = "システム設定で透明度を下げるが有効です";

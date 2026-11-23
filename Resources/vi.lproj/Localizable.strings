@@ -770,3 +770,5 @@
 
 "historyPanelTransparency" = "Độ trong suốt của nền";
 "historyPanelTransparencyHint" = "Áp dụng cho nền thanh trên cùng, bảng lịch sử và cài đặt, giữ văn bản và hình ảnh rõ nét";
+"historyResetTransparency" = "Khôi phục độ trong suốt mặc định";
+"historyTransparencySystemOverride" = "Giảm độ trong suốt đang bật trong cài đặt hệ thống";

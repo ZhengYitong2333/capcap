@@ -122,6 +122,8 @@ enum L10n {
 
     static var historyPanelDisplayModeLabel: String { s("historyPanelDisplayModeLabel") }
     static var historyPanelDisplayModeHint: String { s("historyPanelDisplayModeHint") }
+    static var historyResetTransparency: String { s("historyResetTransparency") }
+    static var historyTransparencySystemOverride: String { s("historyTransparencySystemOverride") }
     static var historyPanelTransparency: String { s("historyPanelTransparency") }
     static var historyPanelTransparencyHint: String { s("historyPanelTransparencyHint") }
     static var historyPanelDialogMode: String { s("historyPanelDialogMode") }
