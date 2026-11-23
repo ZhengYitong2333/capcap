@@ -27,6 +27,7 @@ final class HistoryPanelController {
     private var dialogPanel: NSPanel?
     private var dialogOutsideMonitors: [Any] = []
     private var isDialogLocked = false
+    private let pointerSampler = HistoryHoverSampler()
     private var notchControllers: [CGDirectDisplayID: HistoryNotchWindowController] = [:]
 
     init(onEditEntry: @escaping (HistoryEntry) -> Void) {
@@ -118,7 +119,7 @@ final class HistoryPanelController {
                 controller.updateScreen(screen)
             } else {
                 notchControllers[displayID] = HistoryNotchWindowController(
-                    screen: screen, onEditEntry: onEditEntry
+                    screen: screen, sampler: pointerSampler, onEditEntry: onEditEntry
                 )
             }
         }
@@ -297,10 +298,10 @@ private final class HistoryPanelChromeView: NSView {
     }
 }
 
-private final class HistoryNotchWindowController: NSWindowController {
+private final class HistoryNotchWindowController: NSWindowController, HistoryHoverSamplingClient {
     private var anchorScreen: NSScreen
     private let rootView: HistoryNotchRootView
-    private var hoverSampler: DispatchSourceTimer?
+    private let pointerSampler: HistoryHoverSampler
     private var clickMonitors: [Any] = []
     private var expandWorkItem: DispatchWorkItem?
     private var collapseWorkItem: DispatchWorkItem?
@@ -314,10 +315,10 @@ private final class HistoryNotchWindowController: NSWindowController {
     private let expandDelay: TimeInterval = 0.03
     private let collapseDelay: TimeInterval = 0.35
     private let collapseAnimationDuration: TimeInterval = 0.36
-    private let sampleInterval: TimeInterval = 0.035
     private let postExpandGrace: TimeInterval = 0.5
 
-    init(screen: NSScreen, onEditEntry: @escaping (HistoryEntry) -> Void) {
+    init(screen: NSScreen, sampler: HistoryHoverSampler, onEditEntry: @escaping (HistoryEntry) -> Void) {
+        pointerSampler = sampler
         anchorScreen = screen
         rootView = HistoryNotchRootView(onEditEntry: onEditEntry)
         rootView.updateGeometry(for: screen)
@@ -393,6 +394,7 @@ private final class HistoryNotchWindowController: NSWindowController {
         window?.orderFrontRegardless()
         window?.makeKey()
         rootView.setExpanded(true, animated: true)
+        pointerSampler.refresh()
     }
 
     private func collapse() {
@@ -407,6 +409,7 @@ private final class HistoryNotchWindowController: NSWindowController {
             guard let self, self.isCollapsing else { return }
             self.isCollapsing = false
             self.window?.ignoresMouseEvents = true
+            self.pointerSampler.refresh()
         }
         collapseCompletionWorkItem = completion
         DispatchQueue.main.asyncAfter(deadline: .now() + collapseAnimationDuration, execute: completion)
@@ -423,12 +426,12 @@ private final class HistoryNotchWindowController: NSWindowController {
         if isLocked {
             cancelCollapse()
         } else {
-            handleMouseMove()
+            pointerSampler.refresh()
         }
     }
 
     private func startMouseMonitoring() {
-        startHoverSampler()
+        pointerSampler.register(self)
         if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
             self?.handleNotchClick()
             return event
@@ -461,42 +464,36 @@ private final class HistoryNotchWindowController: NSWindowController {
     private func stopMouseMonitoring() {
         clickMonitors.forEach(NSEvent.removeMonitor)
         clickMonitors.removeAll()
-        stopHoverSampler()
+        pointerSampler.unregister(self)
         cancelExpand()
         cancelCollapse()
     }
 
-    private func startHoverSampler() {
-        guard hoverSampler == nil else { return }
-        let sampler = DispatchSource.makeTimerSource(queue: .main)
-        sampler.schedule(deadline: .now(), repeating: sampleInterval, leeway: .milliseconds(8))
-        sampler.setEventHandler { [weak self] in
-            self?.handleMouseMove()
-        }
-        hoverSampler = sampler
-        sampler.resume()
+    func suspendPointerSampling() {
+        cancelExpand()
+        cancelCollapse()
     }
 
-    private func stopHoverSampler() {
-        hoverSampler?.setEventHandler {}
-        hoverSampler?.cancel()
-        hoverSampler = nil
+    var needsActiveSampling: Bool { rootView.isExpanded || isCollapsing }
+
+    func isNearEntry(_ point: NSPoint) -> Bool {
+        collapsedHitRect().insetBy(dx: -80, dy: -80).contains(point)
     }
 
-    private func handleMouseMove() {
+    func samplePointer(_ mouse: NSPoint, moved: Bool) {
         guard let window else { return }
-        let mouse = NSEvent.mouseLocation
+        if !moved && !needsActiveSampling { return }
         if rootView.isExpanded {
             if isLocked {
                 cancelCollapse()
-                rootView.syncHoverStateWithCurrentMouse()
+                if moved { rootView.syncHoverStateWithCurrentMouse(at: mouse) }
                 return
             }
             let rect = expandedHoverRect(in: window)
             if rect.contains(mouse) {
                 commandOpenedMouseHasEnteredHoverRegion = true
                 cancelCollapse()
-                rootView.syncHoverStateWithCurrentMouse()
+                if moved { rootView.syncHoverStateWithCurrentMouse(at: mouse) }
             } else {
                 if holdsOpenUntilMouseEntersHoverRegion, !commandOpenedMouseHasEnteredHoverRegion {
                     cancelCollapse()
@@ -589,6 +586,7 @@ private final class HistoryNotchWindowController: NSWindowController {
     @objc private func screenDidChange() {
         rootView.updateGeometry(for: anchorScreen)
         window?.setFrame(Self.frame(for: anchorScreen, expandedSize: rootView.expandedSize), display: true)
+        pointerSampler.refresh()
     }
 
     private static func frame(for screen: NSScreen?, expandedSize: NSSize) -> NSRect {
@@ -859,9 +857,9 @@ private final class HistoryNotchRootView: NSView {
         }
     }
 
-    func syncHoverStateWithCurrentMouse() {
+    func syncHoverStateWithCurrentMouse(at point: NSPoint? = nil) {
         guard isExpanded else { return }
-        contentView.syncHoverStateWithCurrentMouse()
+        contentView.syncHoverStateWithCurrentMouse(at: point)
     }
 
     func setLocked(_ isLocked: Bool) {
@@ -2783,7 +2781,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         clearActiveHoverTile()
     }
 
-    func syncHoverStateWithCurrentMouse() {
+    func syncHoverStateWithCurrentMouse(at point: NSPoint? = nil) {
         guard isActive, let window, !isHidden, !isShowingShortcutGuide else {
             clearActiveHoverTile()
             return
@@ -2801,7 +2799,7 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             return
         }
 
-        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let windowPoint = window.convertPoint(fromScreen: point ?? NSEvent.mouseLocation)
         let contentPoint = convert(windowPoint, from: nil)
         let scrollPoint = scrollView.convert(windowPoint, from: nil)
         guard bounds.contains(contentPoint), scrollView.bounds.contains(scrollPoint) else {

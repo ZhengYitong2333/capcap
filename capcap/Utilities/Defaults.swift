@@ -70,6 +70,7 @@ enum AppLanguage: String, CaseIterable {
 }
 
 extension Notification.Name {
+    static let historyNotchTriggerDidChange = Notification.Name("capcap.historyNotchTriggerDidChange")
     static let toolbarSizeDidChange = Notification.Name("capcap.toolbarSizeDidChange")
     static let languageDidChange = Notification.Name("capcap.languageDidChange")
     static let historyCacheEnabledDidChange = Notification.Name("capcap.historyCacheEnabledDidChange")
@@ -2503,7 +2504,11 @@ struct Defaults {
         get {
             HistoryNotchTriggerMode(rawValue: defaults.string(forKey: "historyNotchTriggerMode") ?? "") ?? .hover
         }
-        set { defaults.set(newValue.rawValue, forKey: "historyNotchTriggerMode") }
+        set {
+            guard newValue != historyNotchTriggerMode else { return }
+            defaults.set(newValue.rawValue, forKey: "historyNotchTriggerMode")
+            NotificationCenter.default.post(name: .historyNotchTriggerDidChange, object: nil)
+        }
     }
 
     static var historyPanelDialogEnabled: Bool {
