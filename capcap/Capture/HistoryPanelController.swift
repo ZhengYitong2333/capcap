@@ -188,6 +188,7 @@ final class HistoryPanelController {
             },
             onEditEntry: onEditEntry
         )
+        content.browseContext = "dialog/\(screen.flatMap { Self.displayID(for: $0) } ?? 0)"
         content.frame = chrome.bounds
         content.autoresizingMask = [.width, .height]
         chrome.addSubview(content)
@@ -202,6 +203,9 @@ final class HistoryPanelController {
 
     private func closeDialog() {
         stopDialogOutsideMonitoring()
+        if let chrome = dialogPanel?.contentView {
+            chrome.subviews.compactMap { $0 as? HistoryPanelContentView }.forEach { $0.setActive(false) }
+        }
         dialogPanel?.orderOut(nil)
         dialogPanel = nil
         isDialogLocked = false
@@ -778,6 +782,8 @@ private final class HistoryNotchRootView: NSView {
 
     func updateGeometry(for screen: NSScreen?) {
         geometry = HistoryNotchGeometry.geometry(for: screen)
+        let displayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+        contentView.browseContext = "notch/\(displayID)"
         collapsedLabel.isHidden = !geometry.hasPhysicalNotch
         contentView.updateNotchGeometry(geometry)
         currentSize = isExpanded ? expandedSize : collapsedSize
@@ -1539,6 +1545,12 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     private var searchGeneration = 0
     private var searchAnimationGeneration = 0
     private var filterViewportWidthConstraint: NSLayoutConstraint?
+    private let filterDwell = HistoryFilterDwell()
+    private var pendingBrowsePosition: HistoryBrowsePosition?
+    private var isRestoringBrowsePosition = false
+    var browseContext = "dialog"
+    private var previewLoadGate = HistoryPreviewLoadGate()
+    private var entriesGeneration = 0
 
     init(
         presentation: HistoryPanelPresentation,
@@ -1631,10 +1643,17 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
             let button = HistoryPanelFilterButton(filter: filter)
             button.target = self
             button.action = #selector(filterClicked(_:))
-            button.onHover = { [weak self] in
-                guard let self, self.isActive, self.selectedFilter != filter else { return }
-                self.selectFilter(filter, reveal: false)
+            button.onHover = { [weak self, weak button] in
+                guard let self, self.isActive, !self.isScrollingContent,
+                      NSEvent.pressedMouseButtons == 0, self.selectedFilter != filter else { return }
+                self.filterDwell.schedule { [weak self, weak button] in
+                    guard let self, let button, self.isActive, !self.isScrollingContent,
+                          NSEvent.pressedMouseButtons == 0, button.isPointerInside,
+                          self.availableFilters.contains(filter) else { return }
+                    self.selectFilter(filter, reveal: false)
+                }
             }
+            button.onHoverEnded = { [weak self] in self?.filterDwell.cancel() }
             filterButtons[filter] = button
             filterScrollView.addFilterButton(button)
         }
@@ -1849,6 +1868,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
 
     func setActive(_ active: Bool) {
         guard isActive != active else { return }
+        if !active { rememberBrowsePosition() }
+        filterDwell.cancel()
         isActive = active
         if active {
             if needsEntriesReload || !hasLoadedEntries {
@@ -1893,6 +1914,10 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private func selectFilter(_ filter: HistoryPanelFilter, reveal: Bool = true) {
+        filterDwell.cancel()
+        guard filter != selectedFilter else { return }
+        rememberBrowsePosition()
+        pendingBrowsePosition = HistoryBrowseMemory.shared[browseContext, filter]
         // Keep the strip stationary under the pointer when switching by hover.
         shouldRevealSelectedFilter = reveal
         clearKeyboardNavigation()
@@ -1992,6 +2017,8 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
 
     private func beginSearchMode() {
         guard isActive else { return }
+        rememberBrowsePosition()
+        filterDwell.cancel()
 
         setShortcutGuideVisible(false)
         if selectedFilter.searchScope == nil {
@@ -2390,14 +2417,22 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     @objc private func cardSizeChanged() {
+        isRestoringBrowsePosition = isActive
+        if !isActive { needsEntriesReload = true }
         refreshSizeControls()
         updateCollectionLayout()
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(refreshSizedPreviews), object: nil)
+        perform(#selector(refreshSizedPreviews), with: nil, afterDelay: 0.15)
     }
 
     @objc private func refreshSizedPreviews() {
         guard isActive else { return }
-        collectionView.reloadData()
-        collectionView.layoutSubtreeIfNeeded()
+        applyEntries(visibleEntries, hasAnyEntries: !allEntries.isEmpty)
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        previewLoadGate.reset()
         updatePreviewLoading(initial: true)
     }
 
@@ -2474,12 +2509,21 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
     }
 
     private func applyEntries(_ entries: [HistoryEntry], hasAnyEntries: Bool) {
-        previewWarmGeneration += 1
+        filterDwell.cancel()
+        let position = isSearchMode ? nil : (pendingBrowsePosition ?? HistoryBrowseMemory.shared[browseContext, selectedFilter])
+        pendingBrowsePosition = nil
+        let restoredIndex = position?.resolvedIndex(in: entries.map { entryID($0) })
+        entriesGeneration += 1
+        let generation = entriesGeneration
+        isRestoringBrowsePosition = true
+        previewLoadGate.reset()
         clearKeyboardNavigation()
         clearActiveHoverTile()
         visibleEntries = entries
         pruneSelection(to: entries)
-        renderedEntryCount = min(Self.pageSize, entries.count)
+        let visibleCapacity = Int(ceil(scrollView.contentView.bounds.width / max(1, presentation.tileWidth + collectionLayout.minimumLineSpacing))) + 1
+        let requiredCount = restoredIndex.map { ((($0 + visibleCapacity) / Self.pageSize) + 1) * Self.pageSize } ?? Self.pageSize
+        renderedEntryCount = min(requiredCount, entries.count)
         isAppendingPage = false
         lastScrollOriginX = scrollView.contentView.bounds.origin.x
         collectionView.reloadData()
@@ -2493,11 +2537,30 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         updateEmptyLabel()
         updateContentVisibility()
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.entriesGeneration == generation else { return }
+            self.collectionView.layoutSubtreeIfNeeded()
+            if let position, let index = restoredIndex {
+                let stride = self.presentation.tileWidth + self.collectionLayout.minimumLineSpacing
+                let x = self.collectionLayout.sectionInset.left + (CGFloat(index) + position.fraction) * stride
+                let maximum = max(0, self.collectionLayout.collectionViewContentSize.width - self.scrollView.contentView.bounds.width)
+                self.scrollView.contentView.scroll(to: NSPoint(x: min(maximum, max(0, x)), y: 0))
+                self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+            }
+            self.isRestoringBrowsePosition = false
+            self.rememberBrowsePosition()
             self.loadNextPageIfNeeded()
             self.syncHoverStateWithCurrentMouse()
             self.updatePreviewLoading(initial: true)
         }
+    }
+
+    private func rememberBrowsePosition() {
+        guard isActive, !isSearchMode, !isRestoringBrowsePosition,
+              let index = visibleIndexRange()?.lowerBound, visibleEntries.indices.contains(index) else { return }
+        let stride = presentation.tileWidth + collectionLayout.minimumLineSpacing
+        let fraction = (scrollView.contentView.bounds.minX - collectionLayout.sectionInset.left) / stride - CGFloat(index)
+        HistoryBrowseMemory.shared[browseContext, selectedFilter] = HistoryBrowsePosition(
+            entryID: entryID(visibleEntries[index]), index: index, fraction: fraction)
     }
 
     private var hasSelection: Bool {
@@ -3108,12 +3171,14 @@ private final class HistoryPanelContentView: NSView, NSCollectionViewDataSource,
         if didScrollHorizontally {
             suspendHoverUpdatesDuringScrolling()
         }
+        rememberBrowsePosition()
         loadNextPageIfNeeded()
         visibleCollectionTiles.forEach { $0.loadPreviewIfNeeded() }
         updatePreviewLoading(direction: direction)
     }
 
     private func suspendHoverUpdatesDuringScrolling() {
+        filterDwell.cancel()
         guard isActive, !isKeyboardNavigationActive else { return }
         if !isScrollingContent {
             isScrollingContent = true
