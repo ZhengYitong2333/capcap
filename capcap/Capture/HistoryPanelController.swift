@@ -4399,6 +4399,7 @@ private final class HistoryPanelFilterButton: NSControl {
     var onHover: (() -> Void)?
     let filter: HistoryPanelFilter
     private let label = NSTextField(labelWithString: "")
+    private let glossLayer = CAGradientLayer()
 
     var title: String {
         get { label.stringValue }
@@ -4418,19 +4419,27 @@ private final class HistoryPanelFilterButton: NSControl {
         self.filter = filter
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 14
+        layer?.cornerRadius = 7
         layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        glossLayer.colors = [NSColor.white.withAlphaComponent(0.14).cgColor,
+                             NSColor.white.withAlphaComponent(0.025).cgColor,
+                             NSColor.clear.cgColor]
+        glossLayer.locations = [0, 0.45, 1]
+        glossLayer.startPoint = CGPoint(x: 0.5, y: 1)
+        glossLayer.endPoint = CGPoint(x: 0.5, y: 0)
+        layer?.addSublayer(glossLayer)
 
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         label.alignment = .center
         label.isSelectable = false
         addSubview(label)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 28),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            heightAnchor.constraint(equalToConstant: 26),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
@@ -4447,18 +4456,36 @@ private final class HistoryPanelFilterButton: NSControl {
 
     override var intrinsicContentSize: NSSize {
         NSSize(
-            width: label.intrinsicContentSize.width + 28,
-            height: 28
+            width: label.intrinsicContentSize.width + 24,
+            height: 26
         )
     }
 
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glossLayer.frame = bounds
+        CATransaction.commit()
+    }
+
     private func applyAppearance() {
-        if isSelected {
-            layer?.backgroundColor = filter.tint.cgColor
-            label.textColor = filter == .favorites || filter == .colors ? .white : .black
-        } else {
-            layer?.backgroundColor = filter.tint.withAlphaComponent(0.22).cgColor
-            label.textColor = NSColor.white.withAlphaComponent(0.9)
+        let background = filter.tint.withAlphaComponent(isSelected ? 1 : 0.22).cgColor
+        let previous = layer?.presentation()?.backgroundColor ?? layer?.backgroundColor
+        layer?.backgroundColor = background
+        layer?.borderWidth = 0.5
+        layer?.borderColor = NSColor.white.withAlphaComponent(isSelected ? 0.24 : 0.12).cgColor
+        label.textColor = isSelected
+            ? (filter == .favorites || filter == .colors ? .white : .black)
+            : NSColor.white.withAlphaComponent(0.9)
+
+        if let previous, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let transition = CABasicAnimation(keyPath: "backgroundColor")
+            transition.fromValue = previous
+            transition.toValue = background
+            transition.duration = 0.12
+            transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer?.add(transition, forKey: "historyFilterSelection")
         }
     }
 
