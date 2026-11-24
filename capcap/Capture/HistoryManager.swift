@@ -625,7 +625,7 @@ final class HistoryManager {
         return NSImage(contentsOf: entry.fileURL)
     }
 
-    func clearAll(completion: ((Int, Int) -> Void)? = nil) {
+    func clearAll(completion: ((Int, Int, Int) -> Void)? = nil) {
         entriesCacheLock.lock()
         fileReferenceGeneration += 1
         entriesCacheLock.unlock()
@@ -636,12 +636,12 @@ final class HistoryManager {
             self.invalidateEntriesCache()
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
-                completion?(result.removed.count, result.kept.count)
+                completion?(result.removed.count, result.favorites.count, result.skipped.count)
             }
         }
     }
 
-    func remove(_ entries: [HistoryEntry], completion: ((Int, Int) -> Void)? = nil) {
+    func remove(_ entries: [HistoryEntry], completion: ((Int, Int, Int) -> Void)? = nil) {
         var seen = Set<String>()
         let urls = entries.compactMap { entry -> URL? in
             let url = entry.fileURL.standardizedFileURL
@@ -650,12 +650,12 @@ final class HistoryManager {
         }
 
         queue.async {
-            let result = Self.removeUnfavoritedEntries(urls)
+            let result = Self.removeUnfavoritedEntries(urls, managedCache: self.directoryURL)
             self.removeCopiedEntryPromotions(for: result.removed)
             self.invalidateEntriesCache()
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
-                completion?(result.removed.count, result.kept.count)
+                completion?(result.removed.count, result.favorites.count, result.skipped.count)
             }
         }
     }
@@ -775,61 +775,76 @@ final class HistoryManager {
         try? data.write(to: copiedEntryPromotionsURL, options: .atomic)
     }
 
-    private func removeAllEntries(includeRecordingMedia: Bool)
-        -> (removed: [URL], kept: [URL]) {
-        let candidates = fileURLsToRemove(includeRecordingMedia: includeRecordingMedia)
-        return Self.removeUnfavoritedEntries(candidates)
+    private func removeAllEntries(includeRecordingMedia: Bool) -> RemovalResult {
+        Self.removeUnfavoritedEntries(
+            fileURLsToRemove(includeRecordingMedia: includeRecordingMedia),
+            managedCache: directoryURL
+        )
     }
 
-    /// Partitions `candidates` into the entries "delete all history" may remove
-    /// and the entries it must keep (the favorited ones). A favorited entry is never
-    /// removed by the bulk path, so it stays out of `remove` and is returned in
-    /// `kept`; `clearAll` uses `kept` to preserve those entries' copied-promotion
-    /// rank instead of wiping it. Pure and `@testable`-visible so the bulk
-    /// decision can be exercised headlessly without driving the shared
-    /// `HistoryManager` directory. Selected deletion and cache disabling use
-    /// the same partition so they also preserve favorites.
-    static func partitionEntriesForRemoval(_ candidates: [URL]) -> (remove: [URL], kept: [URL]) {
-        var remove: [URL] = []
-        var kept: [URL] = []
-        for url in candidates {
-            if isFavorite(url: url) {
-                kept.append(url)
-            } else {
-                remove.append(url)
-            }
+    struct RemovalResult {
+        var removed: [URL] = []
+        var favorites: [URL] = []
+        var skipped: [URL] = []
+        var kept: [URL] { favorites + skipped }
+    }
+
+    private static func isManagedCacheFile(_ candidate: URL, in cache: URL?) -> Bool {
+        guard let cache = cache?.standardizedFileURL else { return false }
+        let url = candidate.standardizedFileURL
+        guard url.deletingLastPathComponent().path == cache.path else { return false }
+        // The app's cache root and its app-specific parent must not redirect
+        // to another directory. The candidate must be a direct regular child.
+        for directory in [cache, cache.deletingLastPathComponent()] {
+            guard let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  values.isDirectory == true, values.isSymbolicLink == false else { return false }
         }
-        return (remove, kept)
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true, values.isSymbolicLink == false else { return false }
+        return url.resolvingSymlinksInPath().deletingLastPathComponent().path
+            == cache.resolvingSymlinksInPath().path
     }
 
     @discardableResult
-    static func removeUnfavoritedEntries(_ candidates: [URL]) -> (removed: [URL], kept: [URL]) {
-        let decision = partitionEntriesForRemoval(candidates)
+    static func removeUnfavoritedEntries(_ candidates: [URL], managedCache: URL? = nil) -> RemovalResult {
         let fm = FileManager.default
-        var removed: [URL] = []
-        for url in decision.remove {
-            do {
-                try fm.removeItem(at: url)
-                removed.append(url)
-            } catch {
+        var result = RemovalResult()
+        for url in candidates {
+            if isFavorite(url: url) {
+                result.favorites.append(url)
                 continue
             }
+            let inCache = url.standardizedFileURL.deletingLastPathComponent().path
+                == managedCache?.standardizedFileURL.path
+            let canRemove = inCache ? isManagedCacheFile(url, in: managedCache)
+                : HistoryRecordingProvenance.owns(url)
+            guard canRemove else {
+                result.skipped.append(url)
+                continue
+            }
+            do {
+                try fm.removeItem(at: url)
+                result.removed.append(url)
+            } catch {
+                result.skipped.append(url)
+            }
         }
-        return (removed, decision.kept)
+        return result
     }
 
     private func removeStoredHistoryEntries(withExtensions extensions: Set<String>) {
-        Self.removeStoredHistoryEntries(storedHistoryFileURLs(), withExtensions: extensions)
+        Self.removeStoredHistoryEntries(storedHistoryFileURLs(), withExtensions: extensions,
+                                        managedCache: directoryURL)
     }
 
     @discardableResult
     static func removeStoredHistoryEntries(_ candidates: [URL],
-                                           withExtensions extensions: Set<String>)
-        -> (removed: [URL], kept: [URL]) {
+                                           withExtensions extensions: Set<String>,
+                                           managedCache: URL) -> RemovalResult {
         let matching = candidates.filter {
             extensions.contains($0.pathExtension.lowercased())
         }
-        return removeUnfavoritedEntries(matching)
+        return removeUnfavoritedEntries(matching, managedCache: managedCache)
     }
 
     private func fileURLsToRemove(includeRecordingMedia: Bool) -> [URL] {

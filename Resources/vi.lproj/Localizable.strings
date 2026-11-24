@@ -148,6 +148,7 @@
 "historyPanelDeletedSelected" = "Đã xóa %d mục";
 "historyPanelFavoriteFailed" = "Không thể thay đổi mục yêu thích";
 "historyDeletedSkippingFavorites" = "Đã xóa %d mục, bỏ qua %d mục yêu thích";
+"historyDeletedSkippingOtherItems" = "Đã xóa %d mục, bỏ qua %d mục yêu thích, còn %d mục khác chưa xóa";
 "historyPanelFilterAll" = "Tất cả";
 "historyPanelFilterScreenshots" = "Hình ảnh";
 "historyPanelFilterGIF" = "GIF";

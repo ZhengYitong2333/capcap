@@ -327,6 +327,9 @@ enum L10n {
     static func historyDeletedSkippingFavorites(removed: Int, skipped: Int) -> String {
         String(format: s("historyDeletedSkippingFavorites"), removed, skipped)
     }
+    static func historyDeletedSkippingOtherItems(removed: Int, favorites: Int, other: Int) -> String {
+        String(format: s("historyDeletedSkippingOtherItems"), removed, favorites, other)
+    }
     static var historyPanelFilterAll: String { s("historyPanelFilterAll") }
     static var historyPanelFilterScreenshots: String { s("historyPanelFilterScreenshots") }
     static var historyPanelFilterGIF: String { s("historyPanelFilterGIF") }

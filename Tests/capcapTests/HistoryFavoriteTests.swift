@@ -75,16 +75,11 @@ final class HistoryFavoriteTests: XCTestCase {
         let plain = try makeFile(name: "plain.png", contents: Data([0x02]))
         XCTAssertTrue(HistoryManager.setFavorite(true, on: favorite))
 
-        let candidates = [favorite, plain]
-        let decision = HistoryManager.partitionEntriesForRemoval(candidates)
-
-        XCTAssertEqual(decision.kept, [favorite])
-        XCTAssertEqual(decision.remove, [plain])
-
-        // Performing the removal the way production does leaves the favorite file on disk.
-        for url in decision.remove {
-            try? FileManager.default.removeItem(at: url)
-        }
+        let result = HistoryManager.removeUnfavoritedEntries(
+            [favorite, plain], managedCache: plain.deletingLastPathComponent()
+        )
+        XCTAssertEqual(result.kept, [favorite])
+        XCTAssertEqual(result.removed, [plain])
         XCTAssertFalse(FileManager.default.fileExists(atPath: plain.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: favorite.path))
     }
@@ -94,7 +89,7 @@ final class HistoryFavoriteTests: XCTestCase {
         let plain = try makeFile(name: "plain.png", contents: Data([0x02]))
         XCTAssertTrue(HistoryManager.setFavorite(true, on: favorite))
 
-        let result = HistoryManager.removeUnfavoritedEntries([favorite, plain])
+        let result = HistoryManager.removeUnfavoritedEntries([favorite, plain], managedCache: plain.deletingLastPathComponent())
 
         XCTAssertEqual(result.removed, [plain])
         XCTAssertEqual(result.kept, [favorite])
@@ -123,11 +118,11 @@ final class HistoryFavoriteTests: XCTestCase {
 
         let candidates = [favoriteImage, plainImage, favoriteText, plainText]
         let mediaResult = HistoryManager.removeStoredHistoryEntries(
-            candidates, withExtensions: ["png", "gif", "mp4", "color"])
+            candidates, withExtensions: ["png", "gif", "mp4", "color"], managedCache: plainImage.deletingLastPathComponent())
         XCTAssertTrue(FileManager.default.fileExists(atPath: plainText.path),
                       "disabling media cache must not clear text history")
         let textResult = HistoryManager.removeStoredHistoryEntries(
-            candidates, withExtensions: ["txt"])
+            candidates, withExtensions: ["txt"], managedCache: plainText.deletingLastPathComponent())
 
         XCTAssertEqual(mediaResult.removed, [plainImage])
         XCTAssertEqual(textResult.removed, [plainText])

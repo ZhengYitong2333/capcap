@@ -148,6 +148,7 @@
 "historyPanelDeletedSelected" = "已刪除 %d 個項目";
 "historyPanelFavoriteFailed" = "無法更改收藏";
 "historyDeletedSkippingFavorites" = "已刪除 %d 個項目，跳過 %d 個收藏";
+"historyDeletedSkippingOtherItems" = "已刪除 %d 個項目，跳過 %d 個收藏，另有 %d 個項目未刪除";
 "historyPanelFilterAll" = "全部";
 "historyPanelFilterScreenshots" = "圖片";
 "historyPanelFilterGIF" = "GIF";

@@ -2263,8 +2263,11 @@ final class HistoryPanelContentView: NSView, NSCollectionViewDataSource, NSColle
                     clearSelection()
                     return
                 }
-                HistoryManager.shared.remove(entriesToDelete) { removedCount, skippedCount in
-                    if skippedCount > 0 {
+                HistoryManager.shared.remove(entriesToDelete) { removedCount, skippedCount, otherSkippedCount in
+                    if otherSkippedCount > 0 {
+                        ToastWindow.show(message: L10n.historyDeletedSkippingOtherItems(
+                            removed: removedCount, favorites: skippedCount, other: otherSkippedCount))
+                    } else if skippedCount > 0 {
                         ToastWindow.show(message: L10n.historyDeletedSkippingFavorites(
                             removed: removedCount, skipped: skippedCount))
                     } else if removedCount > 0 {
@@ -2273,8 +2276,11 @@ final class HistoryPanelContentView: NSView, NSCollectionViewDataSource, NSColle
                 }
                 clearSelection()
             } else {
-                HistoryManager.shared.clearAll { removedCount, skippedCount in
-                    if skippedCount > 0 {
+                HistoryManager.shared.clearAll { removedCount, skippedCount, otherSkippedCount in
+                    if otherSkippedCount > 0 {
+                        ToastWindow.show(message: L10n.historyDeletedSkippingOtherItems(
+                            removed: removedCount, favorites: skippedCount, other: otherSkippedCount))
+                    } else if skippedCount > 0 {
                         ToastWindow.show(message: L10n.historyDeletedSkippingFavorites(
                             removed: removedCount, skipped: skippedCount))
                     } else {

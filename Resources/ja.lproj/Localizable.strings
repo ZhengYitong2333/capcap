@@ -148,6 +148,7 @@
 "historyPanelDeletedSelected" = "%d件の項目を削除しました";
 "historyPanelFavoriteFailed" = "お気に入りを変更できません";
 "historyDeletedSkippingFavorites" = "項目を%d件削除、お気に入りを%d件スキップ";
+"historyDeletedSkippingOtherItems" = "項目を%d件削除、お気に入りを%d件スキップ、その他の未削除項目は%d件";
 "historyPanelFilterAll" = "すべて";
 "historyPanelFilterScreenshots" = "画像";
 "historyPanelFilterGIF" = "GIF";

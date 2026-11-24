@@ -1240,6 +1240,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showSavedRecording(_ destination: URL) {
+        HistoryRecordingProvenance.mark(destination)
         HistoryManager.shared.addFile(destination)
         let directoryPath = SaveDestination.displayPath(destination.deletingLastPathComponent())
         ToastWindow.show(message: L10n.recordingSaved(to: directoryPath))
