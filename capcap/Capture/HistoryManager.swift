@@ -398,7 +398,7 @@ final class HistoryManager {
 
     /// Called on the main queue after the entry is stored and the cache is invalidated.
     private static func notifyAddition(_ filter: HistoryPanelFilter) {
-        HistoryBrowseMemory.shared.noteAddition(filter)
+        HistoryFilterState.shared.noteAddition(filter)
         NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
     }
 
