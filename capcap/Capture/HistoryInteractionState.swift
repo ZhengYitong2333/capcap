@@ -1,6 +1,7 @@
 import AppKit
 
 struct HistoryBrowsePosition: Equatable {
+    static let start = Self(entryID: "", index: 0, fraction: 0)
     let entryID: String
     let index: Int
     let fraction: CGFloat
@@ -17,8 +18,25 @@ final class HistoryBrowseMemory {
     static let didChange = Notification.Name("HistoryBrowseMemoryDidChange")
     private var positions: [HistoryPanelFilter: HistoryBrowsePosition] = [:]
     private(set) var selectedFilter: HistoryPanelFilter = .all
+    private var latestAddedFilter: HistoryPanelFilter?
 
     subscript(filter: HistoryPanelFilter) -> HistoryBrowsePosition? { positions[filter] }
+
+    func noteAddition(_ filter: HistoryPanelFilter) {
+        latestAddedFilter = filter
+    }
+
+    /// Consume once for all screens. Without a new addition, keep the user's bookmark.
+    @discardableResult
+    func prepareForOpening(source: AnyObject) -> Bool {
+        guard let filter = latestAddedFilter else { return false }
+        latestAddedFilter = nil
+        selectedFilter = filter
+        // An absent ID intentionally resolves to index zero, including after an async reload.
+        positions[filter] = .start
+        notify(source: source)
+        return true
+    }
 
     func select(_ filter: HistoryPanelFilter, source: AnyObject) {
         guard selectedFilter != filter else { return }

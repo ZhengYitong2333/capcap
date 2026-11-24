@@ -276,7 +276,7 @@ final class HistoryManager {
         pruneMediaToLimit()
         invalidateEntriesCache()
         DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
+            Self.notifyAddition(.screenshots)
         }
     }
 
@@ -296,7 +296,7 @@ final class HistoryManager {
             self.pruneMediaToLimit()
             self.invalidateEntriesCache()
             DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
+                Self.notifyAddition(.colors)
             }
         }
     }
@@ -318,7 +318,7 @@ final class HistoryManager {
             self.pruneTextToLimits()
             self.invalidateEntriesCache()
             DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
+                Self.notifyAddition(.text)
             }
         }
     }
@@ -346,7 +346,7 @@ final class HistoryManager {
             self.pruneMediaToLimit()
             self.invalidateEntriesCache()
             DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
+                Self.notifyAddition(ext == "gif" ? .gif : .mp4)
             }
         }
     }
@@ -390,10 +390,16 @@ final class HistoryManager {
                 }
                 self.invalidateEntriesCache()
                 DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
+                    Self.notifyAddition(.files)
                 }
             }
         }
+    }
+
+    /// Called on the main queue after the entry is stored and the cache is invalidated.
+    private static func notifyAddition(_ filter: HistoryPanelFilter) {
+        HistoryBrowseMemory.shared.noteAddition(filter)
+        NotificationCenter.default.post(name: .historyDidUpdate, object: nil)
     }
 
     func entries() -> [HistoryEntry] {

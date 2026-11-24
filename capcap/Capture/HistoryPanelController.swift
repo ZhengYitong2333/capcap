@@ -1862,6 +1862,11 @@ final class HistoryPanelContentView: NSView, NSCollectionViewDataSource, NSColle
 
     func setActive(_ active: Bool) {
         guard isActive != active else { return }
+        if active, browseMemory.prepareForOpening(source: self) {
+            selectedFilter = browseMemory.selectedFilter
+            shouldRevealSelectedFilter = true
+            needsEntriesReload = true
+        }
         isActive = active
         previewLoadGate.reset()
         if active {
@@ -1954,7 +1959,7 @@ final class HistoryPanelContentView: NSView, NSCollectionViewDataSource, NSColle
 
     private func restoreBrowsePosition(_ position: HistoryBrowsePosition, index: Int) {
         let stride = presentation.tileWidth + collectionLayout.minimumLineSpacing
-        let x = collectionLayout.sectionInset.left + (CGFloat(index) + position.fraction) * stride
+        let x = position == .start ? 0 : collectionLayout.sectionInset.left + (CGFloat(index) + position.fraction) * stride
         let maximum = max(0, collectionLayout.collectionViewContentSize.width - scrollView.contentView.bounds.width)
         scrollView.contentView.scroll(to: NSPoint(x: min(maximum, max(0, x)), y: 0))
         scrollView.reflectScrolledClipView(scrollView.contentView)
