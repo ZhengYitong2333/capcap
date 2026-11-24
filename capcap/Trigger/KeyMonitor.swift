@@ -15,7 +15,9 @@ class KeyMonitor {
 
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private var keyDownMonitor: Any?
+    private let canCopyOnCommandTap: () -> Bool
+    private let onCommandTap: () -> Void
+    private var pendingCopyTap = false
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
     private var lastCommandPressTime: TimeInterval = 0
@@ -33,7 +35,11 @@ class KeyMonitor {
     }
 
     init(onTrigger: @escaping (CaptureTriggerContext) -> Void,
-         onCountdownTrigger: @escaping () -> Void) {
+         onCountdownTrigger: @escaping () -> Void,
+         canCopyOnCommandTap: @escaping () -> Bool,
+         onCommandTap: @escaping () -> Void) {
+        self.canCopyOnCommandTap = canCopyOnCommandTap
+        self.onCommandTap = onCommandTap
         self.onTrigger = onTrigger
         self.onCountdownTrigger = onCountdownTrigger
         startMonitoring()
@@ -46,15 +52,18 @@ class KeyMonitor {
     private func startMonitoring() {
         guard !startEventTapMonitoring() else { return }
 
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleFlagsChanged(event)
+        let events: NSEvent.EventTypeMask = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let observe: (NSEvent) -> Void = { [weak self] event in
+            if event.type == .flagsChanged {
+                self?.handleFlagsChanged(event)
+            } else {
+                self?.interruptGesture()
+            }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleFlagsChanged(event)
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: events, handler: observe)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { event in
+            observe(event)
             return event
-        }
-        keyDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] _ in
-            self?.otherKeyPressed = true
         }
     }
 
@@ -75,13 +84,10 @@ class KeyMonitor {
             NSEvent.removeMonitor(m)
             localMonitor = nil
         }
-        if let m = keyDownMonitor {
-            NSEvent.removeMonitor(m)
-            keyDownMonitor = nil
-        }
     }
 
     private func resetSequence() {
+        pendingCopyTap = false
         lastCommandPressTime = 0
         commandIsDown = false
         otherKeyPressed = false
@@ -99,7 +105,7 @@ class KeyMonitor {
 
     @discardableResult
     private func startEventTapMonitoring() -> Bool {
-        let types: [CGEventType] = [.flagsChanged, .keyDown]
+        let types: [CGEventType] = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
 
         guard let tap = CGEvent.tapCreate(
@@ -126,14 +132,15 @@ class KeyMonitor {
         return true
     }
 
-    private func handleTappedEvent(type: CGEventType, event: CGEvent) {
+    func handleTappedEvent(type: CGEventType, event: CGEvent) {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            resetSequence()
             if let eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
             }
-        case .keyDown:
-            otherKeyPressed = true
+        case .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            interruptGesture()
         case .flagsChanged:
             let flags = event.flags
             handleModifierSample(ModifierSample(
@@ -148,8 +155,30 @@ class KeyMonitor {
         }
     }
 
+    private func interruptGesture() {
+        otherKeyPressed = true
+        pendingCopyTap = false
+    }
+
     private func handleModifierSample(_ sample: ModifierSample) {
         guard isEnabled else { return }
+
+        let began = sample.commandIsDown && !commandIsDown
+        let ended = commandIsDown && !sample.commandIsDown
+        let plain = !sample.optionIsDown && !sample.hasDisruptiveModifiers
+        if !plain { pendingCopyTap = false }
+        if began && plain && canCopyOnCommandTap() {
+            pendingCopyTap = true
+            commandIsDown = true
+            lastCommandPressTime = 0
+            return
+        }
+        if ended && pendingCopyTap {
+            pendingCopyTap = false
+            commandIsDown = false
+            if canCopyOnCommandTap() { onCommandTap() }
+            return
+        }
 
         if sample.hasDisruptiveModifiers {
             otherKeyPressed = true

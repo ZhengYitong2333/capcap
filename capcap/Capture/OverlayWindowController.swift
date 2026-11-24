@@ -220,7 +220,9 @@ class OverlayWindowController {
         let preSnapshot: CGImage?
     }
 
-    /// Route the default copy-to-clipboard hotkey (double-tap ⌘) into the
+    var hasEditor: Bool { editController != nil }
+
+    /// Route the default copy-to-clipboard hotkey into the
     /// editor while the overlay is active. No-op when the editor isn't up yet.
     func confirmFromKeyboard() {
         editController?.confirmFromKeyboard()

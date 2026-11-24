@@ -90,8 +90,8 @@
 
 /* Copy-to-clipboard shortcut (editor confirm) */
 "clipboardShortcutHeader" = "Copy to Clipboard";
-"clipboardShortcutHint" = "Pressed inside the editor to commit the edit and copy the screenshot to the clipboard. Defaults to double-tap ⌘ when not set";
-"clipboardShortcutDefaultDisplay" = "Double-tap ⌘";
+"clipboardShortcutHint" = "Pressed inside the editor to commit the edit and copy the screenshot to the clipboard. Defaults to tap ⌘ when not set";
+"clipboardShortcutDefaultDisplay" = "Tap ⌘";
 
 /* Save-to-file shortcut (editor save) */
 "fileSaveShortcutHeader" = "Save to File";

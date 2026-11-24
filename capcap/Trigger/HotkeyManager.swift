@@ -879,7 +879,7 @@ final class HotkeyManager {
 
     /// Returns (keyCode, carbonModifiers) for the saved copy-to-clipboard
     /// hotkey, or nil when the user hasn't bound one (the default is
-    /// "double-tap ⌘", handled separately by `KeyMonitor`).
+    /// "tap ⌘", handled separately by `KeyMonitor`).
     /// Bare (no-modifier) values are allowed here — the clipboard hotkey is
     /// matched locally against keyDown events inside the editor, not registered
     /// as a global Carbon hotkey, so it won't intercept ordinary typing.
@@ -898,7 +898,7 @@ final class HotkeyManager {
 
     /// Returns true when the given keyDown event matches the user's
     /// copy-to-clipboard hotkey. Returns false when no custom hotkey is set —
-    /// the default (double-tap ⌘) is detected via `KeyMonitor`, not keyDown.
+    /// the default (tap ⌘) is detected via `KeyMonitor`, not keyDown.
     static func eventMatchesClipboardHotkey(_ event: NSEvent) -> Bool {
         guard let (kc, m) = HotkeyManager.shared.currentClipboardHotkey() else { return false }
         return matches(event: event, keyCode: kc, modifiers: m)

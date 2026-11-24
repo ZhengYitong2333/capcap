@@ -90,8 +90,8 @@
 
 /* Copy-to-clipboard shortcut (editor confirm) */
 "clipboardShortcutHeader" = "클립보드에 복사";
-"clipboardShortcutHint" = "편집기에서 누르면 편집을 확정하고 스크린샷을 클립보드에 복사합니다. 설정하지 않으면 ⌘ 더블탭이 기본값입니다";
-"clipboardShortcutDefaultDisplay" = "⌘ 더블탭";
+"clipboardShortcutHint" = "편집기에서 누르면 편집을 확정하고 스크린샷을 클립보드에 복사합니다. 설정하지 않으면 ⌘ 한 번 누르기이 기본값입니다";
+"clipboardShortcutDefaultDisplay" = "⌘ 한 번 누르기";
 
 /* Save-to-file shortcut (editor save) */
 "fileSaveShortcutHeader" = "파일로 저장";

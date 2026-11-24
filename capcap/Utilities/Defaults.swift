@@ -1621,7 +1621,7 @@ struct Defaults {
     }
 
     // Custom copy-to-clipboard hotkey used inside the editor overlay to
-    // confirm the screenshot. When absent, the default is "double-tap ⌘",
+    // confirm the screenshot. When absent, the default is "tap ⌘",
     // detected via the global flag monitor (KeyMonitor) — see AppDelegate.
     // Unlike the screenshot and pin hotkeys this is matched locally against
     // keyDown events instead of registered as a Carbon global hotkey, so it

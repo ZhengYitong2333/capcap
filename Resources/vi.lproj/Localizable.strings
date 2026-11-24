@@ -90,8 +90,8 @@
 
 /* Copy-to-clipboard shortcut (editor confirm) */
 "clipboardShortcutHeader" = "Sao chép vào clipboard";
-"clipboardShortcutHint" = "Nhấn trong trình chỉnh sửa để xác nhận chỉnh sửa và sao chép ảnh chụp vào clipboard. Mặc định là nhấn đúp ⌘ khi chưa đặt";
-"clipboardShortcutDefaultDisplay" = "Nhấn đúp ⌘";
+"clipboardShortcutHint" = "Nhấn trong trình chỉnh sửa để xác nhận chỉnh sửa và sao chép ảnh chụp vào clipboard. Mặc định là nhấn một lần ⌘ khi chưa đặt";
+"clipboardShortcutDefaultDisplay" = "Nhấn một lần ⌘";
 
 /* Save-to-file shortcut (editor save) */
 "fileSaveShortcutHeader" = "Lưu vào tệp";

@@ -153,7 +153,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.handleDoubleTapCommand(triggerContext: context)
             },
-            onCountdownTrigger: { [weak self] in self?.handleCountdownTrigger() }
+            onCountdownTrigger: { [weak self] in self?.handleCountdownTrigger() },
+            canCopyOnCommandTap: { [weak self] in
+                self?.overlayController?.hasEditor == true && !Defaults.hasCustomClipboardHotkey
+            },
+            onCommandTap: { [weak self] in
+                MainRunLoopScheduler.perform { [weak overlay = self?.overlayController] in
+                    overlay?.confirmFromKeyboard()
+                }
+            }
         )
 
         NotificationCenter.default.addObserver(
@@ -212,13 +220,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             HotkeyManager.shared.unregisterCountdown()
         }
 
-        // Double-tap ⌘ does two jobs: it's the default screenshot trigger
-        // when no custom screenshot hotkey is set, and the default
-        // copy-to-clipboard trigger while an overlay is up (when no custom
-        // clipboard hotkey is set). Keep it live whenever either path needs it.
-        let needsDoubleTap = !Defaults.hasCustomScreenshotHotkey
-            || (overlayController != nil && !Defaults.hasCustomClipboardHotkey)
-        keyMonitor?.isRegularDoubleTapEnabled = needsDoubleTap
+        keyMonitor?.isRegularDoubleTapEnabled = !Defaults.hasCustomScreenshotHotkey
 
         // The pin hotkeys are independent of the screenshot hotkey.
         if Defaults.hasCustomQuickPinHotkey {
@@ -436,19 +438,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         historyPanelController?.toggleFromUserRequest(holdOpenUntilMouseEnters: holdOpenUntilMouseEnters)
     }
 
-    /// KeyMonitor entry point for plain double-tap ⌘. While an overlay is
-    /// active this is the default copy-to-clipboard hotkey; otherwise it falls
-    /// through to the regular screenshot trigger.
     private func handleDoubleTapCommand(triggerContext: CaptureTriggerContext) {
         if recordingEngine != nil {
             stopRecordingAndSave()
             triggerContext.finish(.rerouted)
             return
         }
-        if let overlay = overlayController {
-            if !Defaults.hasCustomClipboardHotkey {
-                overlay.confirmFromKeyboard()
-            }
+        if overlayController != nil {
             triggerContext.finish(.rerouted)
             return
         }

@@ -90,8 +90,8 @@
 
 /* Copy-to-clipboard shortcut (editor confirm) */
 "clipboardShortcutHeader" = "複製到剪貼簿";
-"clipboardShortcutHint" = "在編輯器中按下即可確認編輯，並將截圖複製到剪貼簿。未設定時預設為連按兩下 ⌘";
-"clipboardShortcutDefaultDisplay" = "連按兩下 ⌘";
+"clipboardShortcutHint" = "在編輯器中按下即可確認編輯，並將截圖複製到剪貼簿。未設定時預設為按一下 ⌘";
+"clipboardShortcutDefaultDisplay" = "按一下 ⌘";
 
 /* Save-to-file shortcut (editor save) */
 "fileSaveShortcutHeader" = "儲存為檔案";
